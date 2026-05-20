@@ -30,11 +30,10 @@ export async function buildCreateBattleMultisig({ connection, creator, platformP
   const multisigPda = deriveMultisigPda(createKey.publicKey);
   const vaultPda = deriveVaultPda(multisigPda);
 
-  // Squads Protocol v4 requires members sorted by public key
+  // BETA: 1-of-1 multisig (creator only) — platform co-signer added in Phase 3
   const members = [
     { key: creator, permissions: Permissions.all() },
-    { key: new PublicKey(platformPubkey), permissions: Permissions.all() },
-  ].sort((a, b) => a.key.toBase58().localeCompare(b.key.toBase58()));
+  ];
 
   const [programConfigPda] = multisig.getProgramConfigPda({});
   const programConfig = await multisig.accounts.ProgramConfig.fromAccountAddress(
@@ -50,7 +49,7 @@ export async function buildCreateBattleMultisig({ connection, creator, platformP
     multisigPda,
     treasury: programConfig.treasury,
     configAuthority: null,
-    threshold: 2,
+    threshold: 1, // BETA: 1-of-1, upgrade to 2-of-2 with backend signer in Phase 3
     members,
     timeLock: 0,
     rentCollector: null,
