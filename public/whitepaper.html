@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TRAP WARS — Whitepaper</title>
+  <link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=VT323&display=swap" rel="stylesheet" />
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+
+    body {
+      font-family: 'VT323', monospace;
+      color: #fff;
+      background: #080808;
+      min-height: 100vh;
+    }
+
+    /* ── HERO BANNER ── */
+    .hero-banner {
+      position: relative;
+      width: 100%;
+      height: 260px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .hero-banner img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center top;
+      filter: brightness(0.45);
+    }
+    .hero-banner .hero-text {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+    }
+    .hero-banner .hero-text h1 {
+      font-family: 'Permanent Marker', cursive;
+      font-size: clamp(36px, 8vw, 72px);
+      color: #fff;
+      text-shadow: 3px 3px 0 #ff3a00, 6px 6px 0 rgba(255,58,0,.2);
+      line-height: 1;
+    }
+    .hero-banner .hero-text p {
+      font-size: clamp(14px, 3vw, 22px);
+      color: #ffd700;
+      letter-spacing: 4px;
+      margin-top: 10px;
+      text-shadow: 0 0 12px rgba(255,210,0,.5);
+    }
+
+    /* ── CONTENT ── */
+    .content {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+
+    .back-link {
+      display: inline-block;
+      color: #ff3a00;
+      font-size: 18px;
+      letter-spacing: 2px;
+      text-decoration: none;
+      margin-bottom: 40px;
+      border: 1px solid #ff3a00;
+      padding: 6px 14px;
+      border-radius: 4px;
+      transition: background .2s;
+    }
+    .back-link:hover { background: rgba(255,58,0,.15); }
+
+    section {
+      margin-bottom: 44px;
+    }
+
+    h2 {
+      font-family: 'Permanent Marker', cursive;
+      font-size: clamp(22px, 4vw, 32px);
+      color: #ffd700;
+      text-shadow: 2px 2px 0 #cc7700;
+      border-bottom: 1px solid #222;
+      padding-bottom: 10px;
+      margin-bottom: 18px;
+      letter-spacing: 1px;
+    }
+
+    p {
+      font-size: clamp(16px, 2.5vw, 20px);
+      line-height: 1.75;
+      color: #e0e0e0;
+      margin-bottom: 14px;
+    }
+
+    ul {
+      padding-left: 20px;
+      margin-bottom: 14px;
+    }
+    ul li {
+      font-size: clamp(16px, 2.5vw, 20px);
+      line-height: 1.75;
+      color: #e0e0e0;
+      margin-bottom: 8px;
+      list-style: none;
+      padding-left: 4px;
+    }
+    ul li::before {
+      content: '▸ ';
+      color: #ff3a00;
+    }
+
+    .highlight {
+      color: #ffd700;
+      font-weight: bold;
+    }
+
+    .red { color: #ff3a00; }
+
+    /* ── DISCLAIMER BOX ── */
+    .disclaimer {
+      background: rgba(255,58,0,.08);
+      border: 1px solid rgba(255,58,0,.4);
+      border-radius: 8px;
+      padding: 24px 28px;
+      margin-top: 12px;
+    }
+    .disclaimer h2 {
+      color: #ff3a00;
+      text-shadow: none;
+    }
+    .disclaimer p {
+      color: #ccc;
+      font-size: clamp(14px, 2.2vw, 18px);
+    }
+
+    /* ── FOOTER ── */
+    .footer {
+      text-align: center;
+      padding: 24px;
+      border-top: 1px solid #1a1a1a;
+      font-size: 16px;
+      color: #444;
+      letter-spacing: 2px;
+    }
+    .footer a { color: #ff3a00; text-decoration: none; }
+    .footer a:hover { text-decoration: underline; }
+
+    /* ── VERSION TAG ── */
+    .version {
+      font-size: 14px;
+      color: #333;
+      letter-spacing: 3px;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HERO -->
+  <div class="hero-banner">
+    <img src="/warroom-bg.jpg" alt="Trap Wars War Room" />
+    <div class="hero-text">
+      <h1>TRAP WARS</h1>
+      <p>WHITEPAPER — V1.0</p>
+    </div>
+  </div>
+
+  <!-- MAIN CONTENT -->
+  <div class="content">
+
+    <a class="back-link" href="/">← BACK TO TRAP WARS</a>
+
+    <!-- 1. OVERVIEW -->
+    <section>
+      <h2>01. What Is Trap Wars</h2>
+      <p>
+        Trap Wars is a peer-to-peer skill-based trading competition platform built on the
+        <span class="highlight">Solana blockchain</span>. Two traders enter. One wins.
+        The better trader takes the pot.
+      </p>
+      <p>
+        This is not gambling. Trap Wars is a <span class="highlight">skill competition</span>
+        where outcome is determined entirely by trading performance — specifically, which
+        player achieves the highest portfolio percentage gain over a fixed time window.
+        Luck does not determine the winner. Your decisions do.
+      </p>
+    </section>
+
+    <!-- 2. HOW IT WORKS -->
+    <section>
+      <h2>02. How It Works</h2>
+      <ul>
+        <li>Player 1 creates a battle and sets a wager amount in SOL and a time window (5 min, 15 min, 1 hour, or 4 hours).</li>
+        <li>A unique battle link is generated and shared with Player 2.</li>
+        <li>Both players connect their Solana wallets and deposit their wager into a <span class="highlight">Squads Protocol multisig escrow vault</span>. Neither player can touch those funds until the battle ends.</li>
+        <li>At battle start, both portfolios are snapshotted — total USD value of all tokens and SOL in each wallet, priced via <span class="highlight">Jupiter Price API</span>.</li>
+        <li>Both players trade freely during the time window using any Solana DEX or protocol they choose. Trap Wars does not control or restrict your trades.</li>
+        <li>When the timer expires, both portfolios are re-evaluated at final prices. The player with the higher percentage gain wins.</li>
+        <li>The winner receives the full pot minus the platform fee. Funds are released automatically from escrow.</li>
+      </ul>
+    </section>
+
+    <!-- 3. TECHNOLOGY -->
+    <section>
+      <h2>03. Technology Stack</h2>
+      <ul>
+        <li><span class="highlight">Solana Blockchain</span> — All transactions, deposits, and settlements occur on Solana mainnet. Fast finality. Low fees.</li>
+        <li><span class="highlight">Squads Protocol v4</span> — Industry-standard multisig infrastructure used by leading Solana protocols. Funds are held in a program-derived vault. No single party can unilaterally move escrow funds. Squads is independently audited.</li>
+        <li><span class="highlight">Jupiter Price API</span> — Real-time token pricing aggregated across all major Solana DEXes. Used for portfolio valuation at battle start and end. Best-in-class data on Solana.</li>
+        <li><span class="highlight">Metaplex</span> — On-chain NFT verification for Bando Kids and Trap Stars holder fee discounts.</li>
+        <li><span class="highlight">Cloudflare Pages</span> — Frontend deployed globally. No centralized server holding user data.</li>
+      </ul>
+    </section>
+
+    <!-- 4. FEES -->
+    <section>
+      <h2>04. Platform Fees</h2>
+      <p>
+        Trap Wars charges a <span class="highlight">3% platform fee</span> taken from the total pot
+        at settlement. The winner receives the remaining 97%.
+      </p>
+      <p>
+        <span class="highlight">Bando Kids</span> and <span class="highlight">Trap Stars</span>
+        NFT holders on Solana qualify for a reduced <span class="highlight">1.5% fee</span>.
+        Holder status is verified on-chain via Metaplex at battle creation. No manual claims.
+        No codes. Your wallet speaks for itself.
+      </p>
+      <p>
+        Example: Two players wager 1 SOL each. Total pot = 2 SOL.
+        At 3% fee, winner receives 1.94 SOL. Platform receives 0.06 SOL.
+      </p>
+      <p>
+        Platform fees go to the Trap Wars treasury wallet. These fees fund ongoing
+        development, infrastructure, and future rewards programs.
+      </p>
+    </section>
+
+    <!-- 5. WHAT WE DO -->
+    <section>
+      <h2>05. What Trap Wars Does</h2>
+      <ul>
+        <li>Provides a transparent, on-chain escrow system for peer-to-peer trading competitions.</li>
+        <li>Scores traders objectively by portfolio percentage gain over a set time period.</li>
+        <li>Releases funds automatically on settlement with no human intervention in the outcome.</li>
+        <li>Verifies NFT holder status on-chain for fee discounts.</li>
+        <li>Maintains a public leaderboard of battle history and results.</li>
+      </ul>
+    </section>
+
+    <!-- 6. WHAT WE DO NOT DO -->
+    <section>
+      <h2>06. What Trap Wars Does Not Do</h2>
+      <ul>
+        <li class="red">We do not custody your assets. Funds go directly into a Squads Protocol vault. We cannot access them.</li>
+        <li class="red">We do not execute trades on your behalf. You trade on your own wallet using your own tools.</li>
+        <li class="red">We do not guarantee any return or profit. Trading involves significant financial risk.</li>
+        <li class="red">We do not operate as a licensed financial institution, broker, exchange, or investment advisor.</li>
+        <li class="red">We do not collect personal information. No accounts. No KYC. Wallet address only.</li>
+        <li class="red">We do not manipulate prices or outcomes. All scoring uses live Jupiter market data.</li>
+        <li class="red">We do not operate a sportsbook, casino, or traditional gambling service. Outcome is determined by skill, not chance.</li>
+      </ul>
+    </section>
+
+    <!-- 7. RISKS -->
+    <section>
+      <h2>07. Risks</h2>
+      <ul>
+        <li>Trading digital assets is highly speculative and involves substantial risk of loss. You may lose your entire wager.</li>
+        <li>Solana blockchain may experience congestion, downtime, or other technical issues that could affect battle execution.</li>
+        <li>Smart contract risk exists in all on-chain protocols. While Squads Protocol is audited, no system is without risk.</li>
+        <li>Token prices can be manipulated or illiquid. Unusual price movements during a battle could affect outcomes in unexpected ways.</li>
+        <li>Regulatory status of skill-based crypto competitions varies by jurisdiction. It is your responsibility to understand and comply with the laws in your location.</li>
+        <li>Past performance in battles does not guarantee future results.</li>
+      </ul>
+    </section>
+
+    <!-- 8. DISCLAIMER -->
+    <div class="disclaimer">
+      <h2>⚠ Legal Disclaimer</h2>
+      <p>
+        Trap Wars is a skill-based competition platform. Participation does not constitute gambling
+        under the definition applied in most jurisdictions, as outcomes are determined entirely by
+        participant trading skill and knowledge. However, laws governing online competitions,
+        cryptocurrency, and digital asset wagers vary significantly by country and state.
+      </p>
+      <p style="margin-top:12px;">
+        By using Trap Wars, you confirm that you are of legal age in your jurisdiction, that
+        participation in skill-based competitions involving cryptocurrency is permitted where you
+        reside, and that you understand and accept all associated financial and technical risks.
+      </p>
+      <p style="margin-top:12px;">
+        Trap Wars is not responsible for losses incurred during battles, wallet errors, network
+        failures, or regulatory actions in your jurisdiction. Use this platform at your own risk.
+        Nothing on this platform constitutes financial, legal, or investment advice.
+      </p>
+      <p style="margin-top:12px;">
+        Do not participate with funds you cannot afford to lose.
+      </p>
+    </div>
+
+    <!-- 9. CONTACT / LINKS -->
+    <section style="margin-top:44px;">
+      <h2>08. Links</h2>
+      <ul>
+        <li>Platform: <a href="https://trap-wars.pages.dev" style="color:#ffd700;">trap-wars.pages.dev</a></li>
+        <li>Squads Protocol: <a href="https://squads.so" target="_blank" style="color:#ffd700;">squads.so</a></li>
+        <li>Jupiter: <a href="https://jup.ag" target="_blank" style="color:#ffd700;">jup.ag</a></li>
+        <li>Built on Solana: <a href="https://solana.com" target="_blank" style="color:#ffd700;">solana.com</a></li>
+      </ul>
+    </section>
+
+    <p class="version">TRAP WARS WHITEPAPER V1.0 — 2026</p>
+
+  </div>
+
+  <div class="footer">
+    <a href="/">← BACK TO TRAP WARS</a>
+    <br/>
+    <span>LOYALTY OVER EVERYTHING. GAME RECOGNIZE GAME.</span>
+  </div>
+
+</body>
+</html>

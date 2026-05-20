@@ -1,0 +1,1 @@
+{"version":3,"file":"BatchCreateArgs.d.ts","sourceRoot":"","sources":["../../../src/generated/types/BatchCreateArgs.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAEH,OAAO,KAAK,IAAI,MAAM,2BAA2B,CAAA;AACjD,MAAM,MAAM,eAAe,GAAG;IAC5B,UAAU,EAAE,MAAM,CAAA;IAClB,IAAI,EAAE,IAAI,CAAC,OAAO,CAAC,MAAM,CAAC,CAAA;CAC3B,CAAA;AAED;;;GAGG;AACH,eAAO,MAAM,mBAAmB,6CAO7B,CAAA"}

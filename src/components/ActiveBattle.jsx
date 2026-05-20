@@ -1,0 +1,290 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { PublicKey } from '@solana/web3.js';
+import { useApp } from '../context/AppContext';
+import { TREASURY_WALLET, PLATFORM_WALLET } from '../lib/constants';
+import {
+  getTokenPrices,
+  evaluatePortfolio,
+  calcPercentChange,
+  collectMints,
+} from '../lib/jupiter';
+import { buildSettlementProposal, deriveMultisigPda } from '../lib/squads';
+import { toLamports, calcFeeAmountSol, calcWinnerAmountSol, toFeePercent, truncateAddress } from '../lib/fees';
+
+const REFRESH_INTERVAL_MS = 30_000; // refresh Jupiter prices every 30s
+
+export function ActiveBattle() {
+  const { connection } = useConnection();
+  const { publicKey, sendTransaction } = useWallet();
+  const { battle, setBattle, clearBattle, showToast } = useApp();
+
+  const [p1ValueUsd, setP1ValueUsd] = useState(null);
+  const [p2ValueUsd, setP2ValueUsd] = useState(null);
+  const [p1Score, setP1Score] = useState(null);
+  const [p2Score, setP2Score] = useState(null);
+  const [timeLeft, setTimeLeft] = useState(null);
+  const [settling, setSettling] = useState(false);
+  const [settled, setSettled] = useState(battle?.status === 'SETTLED');
+
+  const p1InitialRef = useRef(null);
+  const p2InitialRef = useRef(null);
+
+  // ── PRICE REFRESH ─────────────────────────────────────────────────────────
+  const refreshPrices = useCallback(async () => {
+    if (!battle?.player1Snapshot || !battle?.player2Snapshot) return;
+
+    const mints = collectMints(battle.player1Snapshot, battle.player2Snapshot);
+    const prices = await getTokenPrices(mints).catch(() => ({}));
+    if (!Object.keys(prices).length) return;
+
+    const [p1Now, p2Now] = await Promise.all([
+      evaluatePortfolio(battle.player1Snapshot, prices),
+      evaluatePortfolio(battle.player2Snapshot, prices),
+    ]);
+
+    // Compute initial values once
+    if (p1InitialRef.current === null) {
+      p1InitialRef.current = await evaluatePortfolio(battle.player1Snapshot, prices);
+    }
+    if (p2InitialRef.current === null) {
+      p2InitialRef.current = await evaluatePortfolio(battle.player2Snapshot, prices);
+    }
+
+    setP1ValueUsd(p1Now);
+    setP2ValueUsd(p2Now);
+    setP1Score(calcPercentChange(p1InitialRef.current, p1Now));
+    setP2Score(calcPercentChange(p2InitialRef.current, p2Now));
+  }, [battle]);
+
+  useEffect(() => {
+    if (battle?.status !== 'ACTIVE') return;
+    refreshPrices();
+    const interval = setInterval(refreshPrices, REFRESH_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [battle?.status, refreshPrices]);
+
+  // ── COUNTDOWN TIMER ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!battle?.endTime) return;
+
+    const tick = () => {
+      const remaining = Math.max(0, battle.endTime - Date.now());
+      setTimeLeft(remaining);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [battle?.endTime]);
+
+  // ── SETTLEMENT ────────────────────────────────────────────────────────────
+  const handleSettle = useCallback(async () => {
+    if (!publicKey || !battle) return;
+    if (p1Score === null || p2Score === null) {
+      showToast('Price data not ready. Try again in a moment.');
+      return;
+    }
+
+    setSettling(true);
+    const winner = p1Score >= p2Score ? battle.player1 : battle.player2;
+    const loser = winner === battle.player1 ? battle.player2 : battle.player1;
+    const totalPot = battle.stake * 2;
+    const feeLamports = toLamports(calcFeeAmountSol(totalPot, battle.feeBps));
+    const winnerLamports = toLamports(totalPot) - feeLamports;
+
+    showToast('Building settlement transaction...');
+
+    try {
+      const multisigPda = deriveMultisigPda(battle.createKey);
+      const tx = await buildSettlementProposal({
+        connection,
+        multisigPda,
+        transactionIndex: 1,
+        proposer: publicKey,
+        winnerPubkey: winner,
+        treasuryPubkey: TREASURY_WALLET,
+        winnerLamports,
+        feeLamports,
+      });
+
+      const sig = await sendTransaction(tx, connection);
+      await connection.confirmTransaction(sig, 'confirmed');
+
+      setBattle(prev => ({
+        ...prev,
+        status: 'SETTLED',
+        winner,
+        loser,
+        player1Score: p1Score,
+        player2Score: p2Score,
+        settleSig: sig,
+      }));
+      setSettled(true);
+      showToast('Settlement proposed! Platform co-signature required to execute.');
+    } catch (e) {
+      console.error(e);
+      showToast(e.message?.includes('rejected') ? 'Rejected.' : 'Settlement failed: ' + e.message);
+    } finally {
+      setSettling(false);
+    }
+  }, [publicKey, connection, sendTransaction, battle, p1Score, p2Score, setBattle, showToast]);
+
+  if (!battle || !['ACTIVE', 'SETTLED'].includes(battle.status)) return null;
+
+  const myKey = publicKey?.toBase58();
+  const p1IsMe = myKey === battle.player1;
+  const p2IsMe = myKey === battle.player2;
+  const myScore = p1IsMe ? p1Score : p2IsMe ? p2Score : null;
+  const oppScore = p1IsMe ? p2Score : p2IsMe ? p1Score : null;
+  const isWinner = battle.status === 'SETTLED' && battle.winner === myKey;
+  const totalPot = battle.stake * 2;
+  const winnerAmt = calcWinnerAmountSol(totalPot, battle.feeBps);
+  const feeAmt = calcFeeAmountSol(totalPot, battle.feeBps);
+
+  const formatTime = ms => {
+    if (ms === null) return '--:--:--';
+    const s = Math.floor(ms / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return h > 0
+      ? `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+      : `${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+  };
+
+  const timeExpired = timeLeft === 0;
+
+  return (
+    <div>
+      {battle.status === 'SETTLED' ? (
+        <>
+          <h2>{isWinner ? '🏆 YOU WON' : '💀 YOU LOST'}</h2>
+          <p className="sub">BATTLE SETTLED</p>
+
+          <div className={`winner-banner`} style={!isWinner ? { borderColor: '#f87171' } : {}}>
+            <h3>{isWinner ? 'VICTORY' : 'DEFEAT'}</h3>
+            <p style={{ color: '#aaa', fontFamily: 'sans-serif', fontSize: '0.9rem', marginTop: '8px', marginBottom: 0 }}>
+              {isWinner ? `Winner: ${truncateAddress(battle.winner)}` : `Winner: ${truncateAddress(battle.winner)}`}
+            </p>
+          </div>
+
+          <div className="fee-breakdown">
+            <div className="fee-row">
+              <span>Total pot</span>
+              <span>{totalPot.toFixed(3)} SOL</span>
+            </div>
+            <div className="fee-row">
+              <span>Platform fee ({toFeePercent(battle.feeBps)})</span>
+              <span>−{feeAmt.toFixed(4)} SOL</span>
+            </div>
+            <div className="fee-row">
+              <span>Winner receives</span>
+              <span style={{ color: '#4ade80' }}>{winnerAmt.toFixed(4)} SOL</span>
+            </div>
+          </div>
+
+          <div className="battle-live">
+            <div className={`player-card ${(battle.player1Score ?? 0) >= (battle.player2Score ?? 0) ? 'winning' : 'losing'}`}>
+              <div className="you-badge">P1</div>
+              <div className="player-addr">{truncateAddress(battle.player1)}</div>
+              <div className={`player-score ${(battle.player1Score ?? 0) >= 0 ? 'up' : 'down'}`}>
+                {battle.player1Score !== null ? `${battle.player1Score >= 0 ? '+' : ''}${battle.player1Score.toFixed(2)}%` : '—'}
+              </div>
+              <div className="score-label">P&L</div>
+            </div>
+            <div className={`player-card ${(battle.player2Score ?? 0) > (battle.player1Score ?? 0) ? 'winning' : 'losing'}`}>
+              <div className="you-badge">P2</div>
+              <div className="player-addr">{truncateAddress(battle.player2)}</div>
+              <div className={`player-score ${(battle.player2Score ?? 0) >= 0 ? 'up' : 'down'}`}>
+                {battle.player2Score !== null ? `${battle.player2Score >= 0 ? '+' : ''}${battle.player2Score.toFixed(2)}%` : '—'}
+              </div>
+              <div className="score-label">P&L</div>
+            </div>
+          </div>
+
+          {battle.settleSig && (
+            <p style={{ color: '#555', fontSize: '0.75rem', fontFamily: 'monospace', marginTop: '12px' }}>
+              Settlement proposal: {truncateAddress(battle.settleSig, 8)}
+              <br />
+              <span style={{ color: '#444', fontSize: '0.7rem' }}>
+                Awaiting platform co-signature to release funds.
+              </span>
+            </p>
+          )}
+
+          <button
+            className="action-btn"
+            style={{ marginTop: '16px', background: '#1a1a1a', border: '1px solid #333', fontSize: '1rem' }}
+            onClick={clearBattle}
+          >
+            NEW BATTLE
+          </button>
+        </>
+      ) : (
+        <>
+          <h2>BATTLE LIVE</h2>
+
+          <div className="timer-label">TIME REMAINING</div>
+          <div className="timer-display" style={timeExpired ? { color: '#f87171' } : {}}>
+            {timeExpired ? 'TIME\'S UP' : formatTime(timeLeft)}
+          </div>
+
+          <div className="battle-live">
+            <div className={`player-card${p1Score !== null && p2Score !== null ? (p1Score >= p2Score ? ' winning' : ' losing') : ''}`}>
+              {p1IsMe && <div className="you-badge">YOU</div>}
+              <div className="player-addr">{truncateAddress(battle.player1)}</div>
+              <div className={`player-score${p1Score !== null ? (p1Score >= 0 ? ' up' : ' down') : ''}`}>
+                {p1Score !== null ? `${p1Score >= 0 ? '+' : ''}${p1Score.toFixed(2)}%` : '—'}
+              </div>
+              <div className="score-label">PORTFOLIO P&L</div>
+              {p1ValueUsd !== null && (
+                <div style={{ color: '#555', fontSize: '0.8rem', marginTop: '4px', fontFamily: 'sans-serif' }}>
+                  ${p1ValueUsd.toFixed(2)}
+                </div>
+              )}
+            </div>
+
+            <div className={`player-card${p1Score !== null && p2Score !== null ? (p2Score > p1Score ? ' winning' : ' losing') : ''}`}>
+              {p2IsMe && <div className="you-badge">YOU</div>}
+              <div className="player-addr">{truncateAddress(battle.player2)}</div>
+              <div className={`player-score${p2Score !== null ? (p2Score >= 0 ? ' up' : ' down') : ''}`}>
+                {p2Score !== null ? `${p2Score >= 0 ? '+' : ''}${p2Score.toFixed(2)}%` : '—'}
+              </div>
+              <div className="score-label">PORTFOLIO P&L</div>
+              {p2ValueUsd !== null && (
+                <div style={{ color: '#555', fontSize: '0.8rem', marginTop: '4px', fontFamily: 'sans-serif' }}>
+                  ${p2ValueUsd.toFixed(2)}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ background: '#111', border: '1px solid #1e1e1e', borderRadius: '8px', padding: '12px', margin: '12px 0', display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ color: '#555', fontFamily: 'sans-serif', fontSize: '0.85rem' }}>POT</span>
+            <span style={{ color: '#ffd700' }}>{totalPot.toFixed(3)} SOL</span>
+            <span style={{ color: '#555', fontFamily: 'sans-serif', fontSize: '0.85rem' }}>FEE</span>
+            <span style={{ color: '#aaa' }}>{toFeePercent(battle.feeBps)}</span>
+            <span style={{ color: '#555', fontFamily: 'sans-serif', fontSize: '0.85rem' }}>WINNER GETS</span>
+            <span style={{ color: '#4ade80' }}>{winnerAmt.toFixed(3)} SOL</span>
+          </div>
+
+          {timeExpired && (
+            <button
+              className="action-btn"
+              onClick={handleSettle}
+              disabled={settling}
+            >
+              {settling
+                ? <><span className="spinner" />SETTLING...</>
+                : 'SETTLE BATTLE'}
+            </button>
+          )}
+
+          <p style={{ color: '#333', fontSize: '0.75rem', fontFamily: 'sans-serif', marginTop: '12px' }}>
+            Prices refresh every 30s via Jupiter · Score = portfolio % gain from battle start
+          </p>
+        </>
+      )}
+    </div>
+  );
+}

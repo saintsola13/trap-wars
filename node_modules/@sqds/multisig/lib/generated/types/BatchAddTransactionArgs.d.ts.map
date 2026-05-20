@@ -1,0 +1,1 @@
+{"version":3,"file":"BatchAddTransactionArgs.d.ts","sourceRoot":"","sources":["../../../src/generated/types/BatchAddTransactionArgs.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAEH,OAAO,KAAK,IAAI,MAAM,2BAA2B,CAAA;AACjD,MAAM,MAAM,uBAAuB,GAAG;IACpC,gBAAgB,EAAE,MAAM,CAAA;IACxB,kBAAkB,EAAE,UAAU,CAAA;CAC/B,CAAA;AAED;;;GAGG;AACH,eAAO,MAAM,2BAA2B,qDAOrC,CAAA"}
