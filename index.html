@@ -1,0 +1,1465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TRAP WARS — PVP Trade Wars on Solana</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=VT323&display=swap" rel="stylesheet" />
+  <style>
+    /* ─── RESET ────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: #0a0a0a;
+      color: #fff;
+      font-family: 'VT323', monospace;
+      font-size: 1.1rem;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    /* ─── VARIABLES ─────────────────────────────────────────── */
+    :root {
+      --purple: #9333ea;
+      --purple-dim: #6b21a8;
+      --purple-glow: rgba(147, 51, 234, 0.6);
+      --gold: #ffd700;
+      --red: #ff3a00;
+      --dark: #0a0a0a;
+      --card-bg: rgba(10, 10, 10, 0.82);
+      --border-purple: 1px solid #9333ea;
+    }
+
+    /* ─── SCROLLBAR ─────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0a0a0a; }
+    ::-webkit-scrollbar-thumb { background: var(--purple); border-radius: 3px; }
+
+    /* ─── UTILITY ───────────────────────────────────────────── */
+    .hidden { display: none !important; }
+    .fade-in { animation: fadeIn 0.6s ease forwards; }
+    .fade-out { animation: fadeOut 0.4s ease forwards; }
+
+    @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+    @keyframes drip {
+      0%   { text-shadow: 2px 2px 0 #ff3a00, 4px 4px 0 #cc0000, 0 0 30px #9333ea, 0 0 60px #9333ea; }
+      50%  { text-shadow: 2px 6px 0 #ff3a00, 4px 12px 0 #cc0000, 0 0 50px #9333ea, 0 0 90px rgba(147,51,234,0.4); }
+      100% { text-shadow: 2px 2px 0 #ff3a00, 4px 4px 0 #cc0000, 0 0 30px #9333ea, 0 0 60px #9333ea; }
+    }
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 0 8px var(--purple-glow), 0 0 20px var(--purple-glow); }
+      50%       { box-shadow: 0 0 20px var(--purple-glow), 0 0 50px var(--purple-glow), 0 0 80px rgba(147,51,234,0.2); }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(40px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes scanline {
+      0%   { transform: translateY(-100%); }
+      100% { transform: translateY(100vh); }
+    }
+
+    /* ─── GLOBAL BUTTON BASE ────────────────────────────────── */
+    .btn {
+      font-family: 'VT323', monospace;
+      font-size: 1.1rem;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      transition: all 0.2s ease;
+      text-transform: uppercase;
+    }
+    .btn:active { transform: scale(0.97); }
+
+    /* ─── SCREEN WRAPPER ────────────────────────────────────── */
+    #screen-landing, #screen-warroom {
+      position: fixed;
+      inset: 0;
+      overflow-y: auto;
+      transition: opacity 0.5s ease;
+    }
+    #screen-warroom { opacity: 0; pointer-events: none; }
+    #screen-warroom.active { opacity: 1; pointer-events: all; }
+    #screen-landing.exit { opacity: 0; pointer-events: none; }
+
+    /* ══════════════════════════════════════════════════════════
+       SCREEN 1 — LANDING
+    ══════════════════════════════════════════════════════════ */
+
+    /* ─── HERO ──────────────────────────────────────────────── */
+    #screen-landing {
+      background: #0a0a0a;
+    }
+
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background:
+        linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.75) 60%, rgba(0,0,0,0.92) 100%),
+        url('public/hero-bg.jpg') center center / cover no-repeat;
+      background-attachment: fixed;
+    }
+
+    /* CRT scanline effect */
+    .hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.08) 2px,
+        rgba(0,0,0,0.08) 4px
+      );
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* ─── NAV ───────────────────────────────────────────────── */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.8rem 2rem;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid rgba(147, 51, 234, 0.3);
+    }
+
+    .nav-logo {
+      font-family: 'Permanent Marker', cursive;
+      font-size: 1.6rem;
+      color: #fff;
+      text-shadow: 1px 1px 0 var(--red), 2px 2px 0 #cc0000;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 2rem;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-family: 'VT323', monospace;
+      font-size: 1.15rem;
+      letter-spacing: 0.15em;
+      color: rgba(255,255,255,0.75);
+      text-decoration: none;
+      text-transform: uppercase;
+      transition: color 0.2s, text-shadow 0.2s;
+    }
+    .nav-links a:hover {
+      color: var(--gold);
+      text-shadow: 0 0 10px var(--gold);
+    }
+
+    .nav-cta {
+      font-family: 'VT323', monospace;
+      font-size: 1.1rem;
+      letter-spacing: 0.15em;
+      padding: 0.4rem 1.2rem;
+      background: transparent;
+      border: 1px solid var(--purple);
+      color: #fff;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .nav-cta:hover {
+      background: var(--purple);
+      box-shadow: 0 0 16px var(--purple-glow);
+    }
+
+    /* ─── HERO CENTER ───────────────────────────────────────── */
+    .hero-center {
+      position: relative;
+      z-index: 2;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem 1rem 2rem;
+      text-align: center;
+    }
+
+    .hero-eyebrow {
+      font-size: 0.9rem;
+      letter-spacing: 0.4em;
+      color: var(--purple);
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+
+    .hero-title {
+      font-family: 'Permanent Marker', cursive;
+      font-size: clamp(4rem, 12vw, 9rem);
+      line-height: 1;
+      color: #fff;
+      animation: drip 3s ease-in-out infinite;
+      margin-bottom: 0.4rem;
+    }
+
+    .hero-subtitle {
+      font-size: clamp(1rem, 3vw, 1.5rem);
+      letter-spacing: 0.3em;
+      color: var(--gold);
+      margin-bottom: 2.5rem;
+      text-shadow: 0 0 10px rgba(255, 215, 0, 0.4);
+    }
+
+    .hero-cta {
+      font-family: 'VT323', monospace;
+      font-size: 1.4rem;
+      letter-spacing: 0.2em;
+      padding: 0.8rem 2.5rem;
+      background: rgba(0,0,0,0.7);
+      border: 2px solid var(--purple);
+      color: #fff;
+      cursor: pointer;
+      text-transform: uppercase;
+      animation: pulse-glow 2.5s ease-in-out infinite;
+      transition: all 0.2s;
+      margin-bottom: 1.2rem;
+    }
+    .hero-cta:hover {
+      background: var(--purple-dim);
+      transform: scale(1.03);
+    }
+
+    .hero-disclaimer {
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.35);
+      letter-spacing: 0.1em;
+    }
+
+    /* ─── FEATURE CARDS ─────────────────────────────────────── */
+    .feature-cards {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+      padding: 2rem 2rem 3rem;
+      max-width: 1100px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    @media (max-width: 768px) {
+      .feature-cards { grid-template-columns: repeat(2, 1fr); }
+      .nav-links { display: none; }
+    }
+    @media (max-width: 480px) {
+      .feature-cards { grid-template-columns: 1fr; }
+    }
+
+    .fcard {
+      background: rgba(0,0,0,0.65);
+      border: 1px solid rgba(147, 51, 234, 0.4);
+      padding: 1.2rem;
+      text-align: center;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      animation: slideUp 0.6s ease both;
+    }
+    .fcard:nth-child(1) { animation-delay: 0.1s; }
+    .fcard:nth-child(2) { animation-delay: 0.2s; }
+    .fcard:nth-child(3) { animation-delay: 0.3s; }
+    .fcard:nth-child(4) { animation-delay: 0.4s; }
+    .fcard:hover {
+      border-color: var(--purple);
+      box-shadow: 0 0 20px rgba(147, 51, 234, 0.3);
+    }
+    .fcard-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+    .fcard-title {
+      font-size: 1.1rem;
+      letter-spacing: 0.15em;
+      color: var(--gold);
+      text-transform: uppercase;
+      margin-bottom: 0.4rem;
+    }
+    .fcard-desc { font-size: 0.95rem; color: rgba(255,255,255,0.6); line-height: 1.4; }
+
+    /* ─── SECTIONS ──────────────────────────────────────────── */
+    .section {
+      padding: 5rem 2rem;
+      max-width: 1000px;
+      margin: 0 auto;
+    }
+
+    .section-title {
+      font-family: 'Permanent Marker', cursive;
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      color: #fff;
+      text-shadow: 2px 2px 0 var(--red);
+      margin-bottom: 0.5rem;
+    }
+    .section-rule {
+      width: 60px;
+      height: 3px;
+      background: var(--purple);
+      margin-bottom: 2.5rem;
+      box-shadow: 0 0 10px var(--purple-glow);
+    }
+
+    /* HOW IT WORKS */
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+    }
+    @media (max-width: 600px) { .steps { grid-template-columns: 1fr; } }
+
+    .step {
+      background: var(--card-bg);
+      border: 1px solid rgba(147, 51, 234, 0.3);
+      padding: 1.5rem;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+    .step:hover { border-color: var(--purple); }
+    .step-number {
+      font-family: 'Permanent Marker', cursive;
+      font-size: 4rem;
+      color: rgba(147, 51, 234, 0.15);
+      position: absolute;
+      top: -0.5rem;
+      right: 0.5rem;
+      line-height: 1;
+    }
+    .step-title {
+      font-size: 1.2rem;
+      letter-spacing: 0.12em;
+      color: var(--gold);
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+    .step-desc { font-size: 0.95rem; color: rgba(255,255,255,0.65); line-height: 1.5; }
+
+    /* LEADERBOARD */
+    .lb-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 1rem;
+    }
+    .lb-table th {
+      padding: 0.7rem 1rem;
+      text-align: left;
+      font-size: 0.8rem;
+      letter-spacing: 0.2em;
+      color: var(--purple);
+      text-transform: uppercase;
+      border-bottom: 1px solid rgba(147, 51, 234, 0.4);
+    }
+    .lb-table td {
+      padding: 0.7rem 1rem;
+      color: rgba(255,255,255,0.75);
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .lb-table tr:hover td { background: rgba(147, 51, 234, 0.08); }
+    .lb-rank { color: var(--gold); font-weight: bold; }
+    .lb-wallet { font-family: monospace; font-size: 0.9rem; color: rgba(255,255,255,0.5); }
+    .lb-wins { color: #4ade80; }
+    .lb-earned { color: var(--gold); }
+
+    /* ─── FOOTER ────────────────────────────────────────────── */
+    .footer {
+      background: rgba(0,0,0,0.9);
+      border-top: 1px solid rgba(147, 51, 234, 0.3);
+      padding: 2rem;
+      text-align: center;
+    }
+    .footer-solana {
+      font-size: 0.85rem;
+      letter-spacing: 0.2em;
+      color: var(--purple);
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+    .footer-tagline {
+      font-size: 1rem;
+      color: rgba(255,255,255,0.4);
+      letter-spacing: 0.15em;
+    }
+    .footer-tagline span { color: var(--red); }
+
+    /* ══════════════════════════════════════════════════════════
+       SCREEN 2 — WAR ROOM
+    ══════════════════════════════════════════════════════════ */
+
+    #screen-warroom {
+      background:
+        linear-gradient(to bottom, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.65) 100%),
+        url('public/warroom-bg.jpg') center center / cover no-repeat fixed;
+    }
+
+    /* ─── WAR ROOM TOP BAR ──────────────────────────────────── */
+    .wr-topbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.8rem 2rem;
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid rgba(147, 51, 234, 0.4);
+    }
+    .wr-logo {
+      font-family: 'Permanent Marker', cursive;
+      font-size: 1.6rem;
+      color: #fff;
+      text-shadow: 1px 1px 0 var(--red), 2px 2px 0 #cc0000;
+    }
+    .wr-wallet {
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+    }
+    .wr-wallet-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #4ade80;
+      box-shadow: 0 0 8px #4ade80;
+      animation: blink 2s ease-in-out infinite;
+    }
+    .wr-wallet-addr {
+      font-size: 0.9rem;
+      letter-spacing: 0.05em;
+      color: rgba(255,255,255,0.6);
+      font-family: monospace;
+    }
+    .wr-disconnect {
+      font-family: 'VT323', monospace;
+      font-size: 0.85rem;
+      letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.3);
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: color 0.2s;
+    }
+    .wr-disconnect:hover { color: var(--red); }
+
+    /* ─── WAR ROOM BODY ─────────────────────────────────────── */
+    .wr-body {
+      min-height: calc(100vh - 60px);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 3rem 1rem 4rem;
+      gap: 2.5rem;
+    }
+
+    /* ─── MAIN PANEL ────────────────────────────────────────── */
+    .war-panel {
+      width: 100%;
+      max-width: 520px;
+      background: rgba(10, 10, 10, 0.85);
+      border: 1px solid var(--purple);
+      box-shadow: 0 0 30px rgba(147, 51, 234, 0.3), inset 0 0 30px rgba(0,0,0,0.5);
+      padding: 2rem;
+      animation: slideUp 0.5s ease both;
+    }
+
+    .war-panel-title {
+      font-family: 'Permanent Marker', cursive;
+      font-size: 2rem;
+      color: #fff;
+      text-shadow: 1px 1px 0 var(--red);
+      margin-bottom: 0.2rem;
+    }
+    .war-panel-sub {
+      font-size: 0.9rem;
+      letter-spacing: 0.15em;
+      color: var(--purple);
+      text-transform: uppercase;
+      margin-bottom: 2rem;
+    }
+
+    /* stake picker */
+    .stake-label {
+      font-size: 0.8rem;
+      letter-spacing: 0.2em;
+      color: rgba(255,255,255,0.5);
+      text-transform: uppercase;
+      margin-bottom: 0.8rem;
+    }
+    .stake-buttons {
+      display: flex;
+      gap: 0.8rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .stake-btn {
+      flex: 1;
+      min-width: 80px;
+      padding: 0.7rem 0.5rem;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(147, 51, 234, 0.4);
+      color: rgba(255,255,255,0.6);
+      font-family: 'VT323', monospace;
+      font-size: 1.1rem;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      text-align: center;
+      text-transform: uppercase;
+      transition: all 0.2s;
+    }
+    .stake-btn:hover {
+      border-color: var(--purple);
+      color: #fff;
+    }
+    .stake-btn.active {
+      border-color: var(--purple);
+      background: rgba(147, 51, 234, 0.2);
+      color: #fff;
+      box-shadow: 0 0 12px var(--purple-glow);
+    }
+    .stake-btn.degen-only { opacity: 0.3; pointer-events: none; }
+    .stake-btn.degen-only.unlocked { opacity: 1; pointer-events: all; }
+
+    /* degen toggle */
+    .degen-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.8rem 1rem;
+      background: rgba(255, 58, 0, 0.05);
+      border: 1px solid rgba(255, 58, 0, 0.2);
+      margin-bottom: 1.5rem;
+      cursor: pointer;
+      transition: border-color 0.2s;
+      user-select: none;
+    }
+    .degen-row:hover { border-color: var(--red); }
+    .degen-row.active {
+      border-color: var(--red);
+      background: rgba(255, 58, 0, 0.1);
+      box-shadow: 0 0 10px rgba(255, 58, 0, 0.2);
+    }
+    .degen-label {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .degen-icon { font-size: 1.2rem; }
+    .degen-text {
+      font-size: 1rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .degen-text span { color: var(--red); }
+    .degen-toggle {
+      width: 36px;
+      height: 20px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 10px;
+      position: relative;
+      transition: background 0.2s;
+    }
+    .degen-toggle::after {
+      content: '';
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      background: rgba(255,255,255,0.4);
+      border-radius: 50%;
+      top: 3px;
+      left: 3px;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .degen-row.active .degen-toggle {
+      background: rgba(255, 58, 0, 0.5);
+    }
+    .degen-row.active .degen-toggle::after {
+      transform: translateX(16px);
+      background: var(--red);
+    }
+
+    /* find opponent button */
+    .find-btn {
+      width: 100%;
+      padding: 1rem;
+      background: var(--purple-dim);
+      border: 2px solid var(--purple);
+      color: #fff;
+      font-family: 'VT323', monospace;
+      font-size: 1.4rem;
+      letter-spacing: 0.2em;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: all 0.2s;
+      animation: pulse-glow 2.5s ease-in-out infinite;
+      margin-bottom: 0.5rem;
+    }
+    .find-btn:hover {
+      background: var(--purple);
+      transform: scale(1.01);
+    }
+    .find-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+      animation: none;
+    }
+
+    /* lobby state */
+    .lobby-state {
+      margin-top: 1.2rem;
+      padding: 1rem;
+      background: rgba(0,0,0,0.4);
+      border: 1px solid rgba(147, 51, 234, 0.3);
+      text-align: center;
+      display: none;
+    }
+    .lobby-state.show { display: block; }
+    .lobby-waiting {
+      font-size: 0.8rem;
+      letter-spacing: 0.25em;
+      color: var(--gold);
+      text-transform: uppercase;
+      animation: blink 1.2s ease-in-out infinite;
+      margin-bottom: 0.6rem;
+    }
+    .lobby-code-label {
+      font-size: 0.75rem;
+      letter-spacing: 0.2em;
+      color: rgba(255,255,255,0.4);
+      text-transform: uppercase;
+      margin-bottom: 0.3rem;
+    }
+    .lobby-code {
+      font-family: 'Permanent Marker', cursive;
+      font-size: 2.2rem;
+      color: var(--purple);
+      text-shadow: 0 0 20px var(--purple-glow);
+      letter-spacing: 0.2em;
+      margin-bottom: 0.5rem;
+    }
+    .lobby-share {
+      font-size: 0.8rem;
+      letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.4);
+    }
+    .lobby-spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,215,0,0.2);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 0.4rem;
+    }
+    .lobby-cancel {
+      margin-top: 0.8rem;
+      font-family: 'VT323', monospace;
+      font-size: 0.85rem;
+      letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.3);
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: color 0.2s;
+    }
+    .lobby-cancel:hover { color: var(--red); }
+
+    /* ─── STAT TILES ────────────────────────────────────────── */
+    .stat-tiles {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      width: 100%;
+      max-width: 520px;
+      animation: slideUp 0.6s 0.15s ease both;
+      opacity: 0;
+    }
+    .stat-tiles.fade-in { opacity: 1; }
+
+    .stat-tile {
+      background: rgba(10, 10, 10, 0.8);
+      border: 1px solid rgba(147, 51, 234, 0.3);
+      padding: 1rem;
+      text-align: center;
+      transition: border-color 0.2s;
+    }
+    .stat-tile:hover { border-color: var(--purple); }
+    .stat-tile-label {
+      font-size: 0.7rem;
+      letter-spacing: 0.2em;
+      color: rgba(255,255,255,0.4);
+      text-transform: uppercase;
+      margin-bottom: 0.4rem;
+    }
+    .stat-tile-value {
+      font-size: 1.6rem;
+      color: var(--gold);
+      letter-spacing: 0.05em;
+    }
+
+    /* ─── WAR FEED ──────────────────────────────────────────── */
+    .war-feed {
+      width: 100%;
+      max-width: 520px;
+      background: rgba(10, 10, 10, 0.7);
+      border: 1px solid rgba(147, 51, 234, 0.2);
+      padding: 1rem 1.2rem;
+      animation: slideUp 0.6s 0.3s ease both;
+      opacity: 0;
+    }
+    .war-feed.fade-in { opacity: 1; }
+    .war-feed-title {
+      font-size: 0.75rem;
+      letter-spacing: 0.25em;
+      color: var(--purple);
+      text-transform: uppercase;
+      margin-bottom: 0.8rem;
+      border-bottom: 1px solid rgba(147, 51, 234, 0.2);
+      padding-bottom: 0.5rem;
+    }
+    .feed-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.4rem 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      font-size: 0.85rem;
+    }
+    .feed-item:last-child { border-bottom: none; }
+    .feed-wallet { color: rgba(255,255,255,0.45); font-family: monospace; font-size: 0.8rem; }
+    .feed-action { color: rgba(255,255,255,0.65); }
+    .feed-win  { color: #4ade80; }
+    .feed-loss { color: var(--red); }
+    .feed-time { color: rgba(255,255,255,0.25); font-size: 0.75rem; }
+
+    /* ══════════════════════════════════════════════════════════
+       WALLET MODAL
+    ══════════════════════════════════════════════════════════ */
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(4px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    .modal-overlay.show {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .modal {
+      background: #0f0f0f;
+      border: 1px solid var(--purple);
+      box-shadow: 0 0 40px rgba(147, 51, 234, 0.4);
+      padding: 2.5rem 2rem;
+      width: 90%;
+      max-width: 380px;
+      text-align: center;
+      transform: translateY(20px);
+      transition: transform 0.3s;
+    }
+    .modal-overlay.show .modal { transform: translateY(0); }
+
+    .modal-title {
+      font-family: 'Permanent Marker', cursive;
+      font-size: 1.8rem;
+      color: #fff;
+      text-shadow: 1px 1px 0 var(--red);
+      margin-bottom: 0.3rem;
+    }
+    .modal-sub {
+      font-size: 0.85rem;
+      letter-spacing: 0.15em;
+      color: rgba(255,255,255,0.4);
+      text-transform: uppercase;
+      margin-bottom: 2rem;
+    }
+    .modal-wallets {
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+      margin-bottom: 1.5rem;
+    }
+    .wallet-option {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.9rem 1.2rem;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(147, 51, 234, 0.3);
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: 'VT323', monospace;
+      font-size: 1.1rem;
+      letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.8);
+      text-transform: uppercase;
+    }
+    .wallet-option:hover {
+      border-color: var(--purple);
+      background: rgba(147, 51, 234, 0.1);
+      color: #fff;
+    }
+    .wallet-option-icon { font-size: 1.4rem; }
+    .modal-close {
+      font-family: 'VT323', monospace;
+      font-size: 0.9rem;
+      letter-spacing: 0.15em;
+      color: rgba(255,255,255,0.25);
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-transform: uppercase;
+      transition: color 0.2s;
+    }
+    .modal-close:hover { color: rgba(255,255,255,0.6); }
+
+    /* connecting state */
+    .modal-connecting {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+    }
+    .modal-connecting.show { display: flex; }
+    .connect-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(147, 51, 234, 0.2);
+      border-top-color: var(--purple);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    .connect-msg {
+      font-size: 1rem;
+      letter-spacing: 0.15em;
+      color: rgba(255,255,255,0.6);
+      text-transform: uppercase;
+    }
+    .modal-content-main { }
+
+    /* ─── TOAST ─────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(10,10,10,0.95);
+      border: 1px solid var(--purple);
+      color: #fff;
+      font-family: 'VT323', monospace;
+      font-size: 1rem;
+      letter-spacing: 0.1em;
+      padding: 0.7rem 1.5rem;
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s;
+      text-transform: uppercase;
+      box-shadow: 0 0 20px var(--purple-glow);
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════
+     SCREEN 1 — LANDING
+══════════════════════════════════════════ -->
+<div id="screen-landing">
+
+  <!-- HERO SECTION -->
+  <section class="hero">
+
+    <!-- NAV -->
+    <nav class="nav">
+      <div class="nav-logo" onclick="scrollToTop()">TRAP WARS</div>
+      <ul class="nav-links">
+        <li><a href="#how-it-works">How It Works</a></li>
+        <li><a href="#leaderboard">Leaderboard</a></li>
+        <li><a href="#enter-wars" onclick="handleEnterWars(event)">Enter Wars</a></li>
+      </ul>
+      <button class="btn nav-cta" onclick="openWalletModal()">Connect Wallet</button>
+    </nav>
+
+    <!-- CENTER HERO CONTENT -->
+    <div class="hero-center">
+      <p class="hero-eyebrow">👁 Enter if you dare</p>
+      <h1 class="hero-title">TRAP WARS</h1>
+      <p class="hero-subtitle">PVP TRADE WARS &bull; BUILT ON SOLANA</p>
+      <button class="btn hero-cta" onclick="openWalletModal()">
+        🔱 CONNECT SOLANA WALLET
+      </button>
+      <p class="hero-disclaimer">Game recognize game. No rats allowed.</p>
+    </div>
+
+    <!-- FEATURE CARDS -->
+    <div class="feature-cards">
+      <div class="fcard">
+        <div class="fcard-icon">⚔️</div>
+        <div class="fcard-title">PVP Battles</div>
+        <div class="fcard-desc">One-on-one trade wars. You vs. another degen. May the best trader survive.</div>
+      </div>
+      <div class="fcard">
+        <div class="fcard-icon">💰</div>
+        <div class="fcard-title">Win Big</div>
+        <div class="fcard-desc">Stack SOL from every W. The trap pays out for those who know the game.</div>
+      </div>
+      <div class="fcard">
+        <div class="fcard-icon">💀</div>
+        <div class="fcard-title">No Mercy</div>
+        <div class="fcard-desc">No hand-holding. No safety net. You came to eat — prove it.</div>
+      </div>
+      <div class="fcard">
+        <div class="fcard-icon">🔥</div>
+        <div class="fcard-title">Degen Mode</div>
+        <div class="fcard-desc">For the fearless. Unlock 5 SOL battles when basic stakes aren't enough.</div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ── HOW IT WORKS ────────────────────────── -->
+  <section id="how-it-works" style="background: rgba(0,0,0,0.95); border-top: 1px solid rgba(147,51,234,0.2);">
+    <div class="section">
+      <h2 class="section-title">How It Works</h2>
+      <div class="section-rule"></div>
+      <div class="steps">
+        <div class="step">
+          <div class="step-number">01</div>
+          <div class="step-title">Connect Wallet</div>
+          <div class="step-desc">Link your Phantom or Backpack wallet. No accounts. No email. No BS. Your keys, your war.</div>
+        </div>
+        <div class="step">
+          <div class="step-number">02</div>
+          <div class="step-title">Enter the War</div>
+          <div class="step-desc">Pick your stake — 0.1, 0.5, or 1 SOL. Feeling fearless? Enable Degen Mode and go 5 SOL. Generate a lobby, share the code.</div>
+        </div>
+        <div class="step">
+          <div class="step-number">03</div>
+          <div class="step-title">Best Trader Wins</div>
+          <div class="step-desc">Both traders execute. Best PnL takes the pot. Loser respects the game and comes back stronger — or doesn't.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── LEADERBOARD ─────────────────────────── -->
+  <section id="leaderboard" style="background: #0a0a0a; border-top: 1px solid rgba(147,51,234,0.15);">
+    <div class="section">
+      <h2 class="section-title">Leaderboard</h2>
+      <div class="section-rule"></div>
+      <p style="font-size:0.85rem; letter-spacing:0.15em; color:rgba(255,255,255,0.35); margin-bottom:1.5rem; text-transform:uppercase;">Season 1 — Top Trappers</p>
+      <table class="lb-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Wallet</th>
+            <th>Wars Won</th>
+            <th>Total Earned</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="lb-rank">01</td>
+            <td class="lb-wallet">7xKp...3mNq</td>
+            <td class="lb-wins">47</td>
+            <td class="lb-earned">23.5 SOL</td>
+          </tr>
+          <tr>
+            <td class="lb-rank">02</td>
+            <td class="lb-wallet">9aRt...7zWx</td>
+            <td class="lb-wins">38</td>
+            <td class="lb-earned">18.9 SOL</td>
+          </tr>
+          <tr>
+            <td class="lb-rank">03</td>
+            <td class="lb-wallet">4fBm...2kYv</td>
+            <td class="lb-wins">31</td>
+            <td class="lb-earned">15.5 SOL</td>
+          </tr>
+          <tr>
+            <td class="lb-rank">04</td>
+            <td class="lb-wallet">2cXn...9pLs</td>
+            <td class="lb-wins">27</td>
+            <td class="lb-earned">13.5 SOL</td>
+          </tr>
+          <tr>
+            <td class="lb-rank">05</td>
+            <td class="lb-wallet">6dQj...5hFr</td>
+            <td class="lb-wins">21</td>
+            <td class="lb-earned">10.5 SOL</td>
+          </tr>
+          <tr>
+            <td style="color:rgba(255,255,255,0.2); font-size:0.8rem;" colspan="4">
+              &nbsp;&nbsp;— Season 1 still running. You could be on this list. —
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ──────────────────────────────── -->
+  <footer class="footer">
+    <div class="footer-solana">⬡ Built on Solana</div>
+    <div class="footer-tagline">TRAP HOUSE &mdash; <span>NO RATS ALLOWED</span></div>
+  </footer>
+
+</div><!-- /screen-landing -->
+
+
+<!-- ══════════════════════════════════════════
+     SCREEN 2 — WAR ROOM
+══════════════════════════════════════════ -->
+<div id="screen-warroom">
+
+  <!-- TOP BAR -->
+  <div class="wr-topbar">
+    <div class="wr-logo">TRAP WARS</div>
+    <div class="wr-wallet">
+      <div class="wr-wallet-dot"></div>
+      <span class="wr-wallet-addr" id="wr-addr">7xKp...3mNq</span>
+      <button class="wr-disconnect btn" onclick="disconnect()">Disconnect</button>
+    </div>
+  </div>
+
+  <!-- BODY -->
+  <div class="wr-body">
+
+    <!-- MAIN PANEL -->
+    <div id="enter-wars" class="war-panel">
+      <div class="war-panel-title">ENTER THE WAR</div>
+      <div class="war-panel-sub">Pick your stake. Find your opponent. No mercy.</div>
+
+      <div class="stake-label">Select Stake Amount</div>
+      <div class="stake-buttons">
+        <button class="btn stake-btn active" data-sol="0.1" onclick="selectStake(this)">0.1 SOL</button>
+        <button class="btn stake-btn" data-sol="0.5" onclick="selectStake(this)">0.5 SOL</button>
+        <button class="btn stake-btn" data-sol="1.0" onclick="selectStake(this)">1 SOL</button>
+        <button class="btn stake-btn degen-only" id="degen-stake-btn" data-sol="5.0" onclick="selectStake(this)">5 SOL 🔥</button>
+      </div>
+
+      <div class="degen-row" id="degen-toggle" onclick="toggleDegen()">
+        <div class="degen-label">
+          <span class="degen-icon">🔥</span>
+          <span class="degen-text">DEGEN MODE <span>— Unlock 5 SOL Battles</span></span>
+        </div>
+        <div class="degen-toggle"></div>
+      </div>
+
+      <button class="btn find-btn" id="find-btn" onclick="findOpponent()">
+        ⚔️ FIND OPPONENT
+      </button>
+
+      <div class="lobby-state" id="lobby-state">
+        <div class="lobby-waiting"><span class="lobby-spinner"></span> WAITING FOR OPPONENT...</div>
+        <div class="lobby-code-label">Your Lobby Code</div>
+        <div class="lobby-code" id="lobby-code">——</div>
+        <div class="lobby-share">Share this code with your opponent</div>
+        <button class="btn lobby-cancel" onclick="cancelLobby()">✕ Cancel</button>
+      </div>
+    </div>
+
+    <!-- STAT TILES -->
+    <div class="stat-tiles fade-in">
+      <div class="stat-tile">
+        <div class="stat-tile-label">Wars Won</div>
+        <div class="stat-tile-value" id="stat-wins">0</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-tile-label">Total Earned</div>
+        <div class="stat-tile-value" id="stat-earned">0 SOL</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-tile-label">Win Rate</div>
+        <div class="stat-tile-value" id="stat-rate">—</div>
+      </div>
+    </div>
+
+    <!-- WAR FEED -->
+    <div class="war-feed fade-in">
+      <div class="war-feed-title">⚡ Live War Feed</div>
+      <div id="feed-list">
+        <div class="feed-item">
+          <span class="feed-wallet">7xKp...3mNq</span>
+          <span class="feed-action">defeated <span class="feed-wallet">9aRt...7zWx</span></span>
+          <span class="feed-win">+0.5 SOL</span>
+          <span class="feed-time">2m ago</span>
+        </div>
+        <div class="feed-item">
+          <span class="feed-wallet">4fBm...2kYv</span>
+          <span class="feed-action">defeated <span class="feed-wallet">2cXn...9pLs</span></span>
+          <span class="feed-win">+1 SOL</span>
+          <span class="feed-time">7m ago</span>
+        </div>
+        <div class="feed-item">
+          <span class="feed-wallet">6dQj...5hFr</span>
+          <span class="feed-action">entered war vs <span class="feed-wallet">8bNw...4gTm</span></span>
+          <span class="feed-action" style="color:rgba(255,255,255,0.3)">0.1 SOL</span>
+          <span class="feed-time">11m ago</span>
+        </div>
+        <div class="feed-item">
+          <span class="feed-wallet">1hYe...6vRo</span>
+          <span class="feed-action">activated <span style="color:var(--red)">DEGEN MODE</span></span>
+          <span class="feed-action" style="color:var(--red)">5 SOL</span>
+          <span class="feed-time">15m ago</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /wr-body -->
+</div><!-- /screen-warroom -->
+
+
+<!-- ══════════════════════════════════════════
+     WALLET MODAL
+══════════════════════════════════════════ -->
+<div class="modal-overlay" id="wallet-modal" onclick="closeModalOnOverlay(event)">
+  <div class="modal">
+
+    <div class="modal-content-main" id="modal-main">
+      <div class="modal-title">Connect Wallet</div>
+      <div class="modal-sub">Choose your weapon</div>
+      <div class="modal-wallets">
+        <button class="wallet-option" onclick="connectWallet('Phantom')">
+          <span class="wallet-option-icon">👻</span>
+          Phantom
+        </button>
+        <button class="wallet-option" onclick="connectWallet('Backpack')">
+          <span class="wallet-option-icon">🎒</span>
+          Backpack
+        </button>
+      </div>
+      <button class="btn modal-close" onclick="closeWalletModal()">✕ Not Today</button>
+    </div>
+
+    <div class="modal-connecting" id="modal-connecting">
+      <div class="connect-spinner"></div>
+      <div class="connect-msg" id="connect-msg">Connecting to Phantom...</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+
+<!-- ══════════════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════════════ -->
+<script>
+// TODO: Replace simulated wallet with real @solana/wallet-adapter
+
+'use strict';
+
+/* ─── STATE ─────────────────────────────── */
+const state = {
+  connected: false,
+  wallet: null,
+  walletProvider: null,
+  selectedStake: 0.1,
+  degenMode: false,
+  inLobby: false,
+  lobbyCode: null,
+};
+
+/* ─── HELPERS ───────────────────────────── */
+function genWalletAddr() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz123456789';
+  const rand = n => Array.from({length: n}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  return `${rand(4)}...${rand(4)}`;
+}
+
+function genLobbyCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({length: 6}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+}
+
+function showToast(msg, duration = 2800) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function scrollToTop() {
+  document.getElementById('screen-landing').scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* ─── MODAL ─────────────────────────────── */
+function openWalletModal() {
+  if (state.connected) {
+    transitionToWarRoom();
+    return;
+  }
+  document.getElementById('wallet-modal').classList.add('show');
+  document.getElementById('modal-main').style.display = '';
+  document.getElementById('modal-connecting').classList.remove('show');
+}
+
+function closeWalletModal() {
+  document.getElementById('wallet-modal').classList.remove('show');
+}
+
+function closeModalOnOverlay(e) {
+  if (e.target === document.getElementById('wallet-modal')) {
+    closeWalletModal();
+  }
+}
+
+/* ─── WALLET CONNECT (simulated) ─────────── */
+function connectWallet(provider) {
+  document.getElementById('modal-main').style.display = 'none';
+  const connectingEl = document.getElementById('modal-connecting');
+  const msgEl = document.getElementById('connect-msg');
+  connectingEl.classList.add('show');
+  msgEl.textContent = `Connecting to ${provider}...`;
+
+  // Simulate async handshake
+  setTimeout(() => {
+    const addr = genWalletAddr();
+    state.connected = true;
+    state.wallet = addr;
+    state.walletProvider = provider;
+
+    closeWalletModal();
+    transitionToWarRoom();
+    showToast(`✅ Connected: ${addr}`);
+  }, 1500);
+}
+
+/* ─── SCREEN TRANSITION ─────────────────── */
+function transitionToWarRoom() {
+  const landing = document.getElementById('screen-landing');
+  const warRoom = document.getElementById('screen-warroom');
+
+  // Update wallet address display
+  document.getElementById('wr-addr').textContent = state.wallet;
+
+  // Fade out landing, fade in war room
+  landing.classList.add('exit');
+  warRoom.classList.add('active');
+
+  // Scroll war room to top
+  warRoom.scrollTo({ top: 0 });
+}
+
+/* ─── DISCONNECT ────────────────────────── */
+function disconnect() {
+  if (state.inLobby) cancelLobby();
+
+  state.connected = false;
+  state.wallet = null;
+  state.walletProvider = null;
+  state.degenMode = false;
+
+  const landing = document.getElementById('screen-landing');
+  const warRoom = document.getElementById('screen-warroom');
+
+  warRoom.classList.remove('active');
+  landing.classList.remove('exit');
+  landing.scrollTo({ top: 0 });
+
+  // Reset degen UI
+  document.getElementById('degen-toggle').classList.remove('active');
+  document.getElementById('degen-stake-btn').classList.add('degen-only');
+  document.getElementById('degen-stake-btn').classList.remove('unlocked', 'active');
+  // Reselect 0.1 SOL
+  document.querySelectorAll('.stake-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector('[data-sol="0.1"]').classList.add('active');
+  state.selectedStake = 0.1;
+
+  showToast('Wallet disconnected');
+}
+
+/* ─── NAV ENTER WARS ────────────────────── */
+function handleEnterWars(e) {
+  e.preventDefault();
+  if (!state.connected) {
+    openWalletModal();
+  } else {
+    const warRoom = document.getElementById('screen-warroom');
+    const panel   = document.getElementById('enter-wars');
+    warRoom.scrollTo({ top: panel.offsetTop - 80, behavior: 'smooth' });
+  }
+}
+
+/* ─── STAKE PICKER ──────────────────────── */
+function selectStake(btn) {
+  if (btn.classList.contains('degen-only')) return; // locked
+  document.querySelectorAll('.stake-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  state.selectedStake = parseFloat(btn.dataset.sol);
+}
+
+/* ─── DEGEN TOGGLE ──────────────────────── */
+function toggleDegen() {
+  state.degenMode = !state.degenMode;
+  const row     = document.getElementById('degen-toggle');
+  const degenBtn = document.getElementById('degen-stake-btn');
+
+  row.classList.toggle('active', state.degenMode);
+  degenBtn.classList.toggle('degen-only',   !state.degenMode);
+  degenBtn.classList.toggle('unlocked',      state.degenMode);
+
+  if (state.degenMode) {
+    showToast('🔥 DEGEN MODE UNLOCKED — No safety net');
+  } else {
+    // If 5 SOL was selected, fall back to 0.1
+    if (state.selectedStake === 5.0) {
+      selectStake(document.querySelector('[data-sol="0.1"]'));
+    }
+    degenBtn.classList.remove('active');
+    showToast('Degen mode disabled');
+  }
+}
+
+/* ─── FIND OPPONENT ─────────────────────── */
+function findOpponent() {
+  if (state.inLobby) return;
+  state.inLobby  = true;
+  state.lobbyCode = genLobbyCode();
+
+  const btn   = document.getElementById('find-btn');
+  const lobby = document.getElementById('lobby-state');
+  const code  = document.getElementById('lobby-code');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ SEARCHING...';
+  code.textContent = state.lobbyCode;
+  lobby.classList.add('show');
+
+  showToast(`Lobby created: ${state.lobbyCode}`);
+}
+
+function cancelLobby() {
+  state.inLobby  = false;
+  state.lobbyCode = null;
+
+  const btn   = document.getElementById('find-btn');
+  const lobby = document.getElementById('lobby-state');
+
+  btn.disabled = false;
+  btn.textContent = '⚔️ FIND OPPONENT';
+  lobby.classList.remove('show');
+
+  showToast('Lobby cancelled');
+}
+
+/* ─── KEYBOARD CLOSE ────────────────────── */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeWalletModal();
+});
+
+/* ─── LIVE FEED TICKER ──────────────────── */
+const FEED_EVENTS = [
+  (a, b) => ({action: `defeated`, opponent: b, amount: '+0.1 SOL', cls: 'feed-win'}),
+  (a, b) => ({action: `defeated`, opponent: b, amount: '+0.5 SOL', cls: 'feed-win'}),
+  (a, b) => ({action: `defeated`, opponent: b, amount: '+1 SOL',   cls: 'feed-win'}),
+  (a, b) => ({action: `challenged`, opponent: b, amount: '0.1 SOL', cls: ''}),
+  (a, b) => ({action: `activated`, opponent: null, amount: '🔥 DEGEN', cls: 'feed-action', special: 'DEGEN MODE'}),
+];
+
+function addFeedItem() {
+  const feed = document.getElementById('feed-list');
+  if (!feed) return;
+
+  const wallets = ['7xKp...3mNq','9aRt...7zWx','4fBm...2kYv','2cXn...9pLs','6dQj...5hFr','8bNw...4gTm','1hYe...6vRo','3jZd...8wCu'];
+  const a = wallets[Math.floor(Math.random() * wallets.length)];
+  let b;
+  do { b = wallets[Math.floor(Math.random() * wallets.length)]; } while (b === a);
+
+  const template = FEED_EVENTS[Math.floor(Math.random() * FEED_EVENTS.length)];
+  const ev = template(a, b);
+
+  const div = document.createElement('div');
+  div.className = 'feed-item';
+  div.style.opacity = '0';
+  div.style.transition = 'opacity 0.5s';
+
+  if (ev.special) {
+    div.innerHTML = `
+      <span class="feed-wallet">${a}</span>
+      <span class="feed-action">activated <span style="color:var(--red)">${ev.special}</span></span>
+      <span style="color:var(--red)">${ev.amount}</span>
+      <span class="feed-time">just now</span>`;
+  } else {
+    div.innerHTML = `
+      <span class="feed-wallet">${a}</span>
+      <span class="feed-action">${ev.action} <span class="feed-wallet">${b}</span></span>
+      <span class="${ev.cls}">${ev.amount}</span>
+      <span class="feed-time">just now</span>`;
+  }
+
+  feed.insertBefore(div, feed.firstChild);
+  requestAnimationFrame(() => div.style.opacity = '1');
+
+  // Keep max 5 items
+  while (feed.children.length > 5) {
+    feed.removeChild(feed.lastChild);
+  }
+
+  // Update timestamps of existing items
+  Array.from(feed.children).slice(1).forEach((el, i) => {
+    const tEl = el.querySelector('.feed-time');
+    if (tEl) {
+      const mins = (i + 1) * 3;
+      tEl.textContent = `${mins}m ago`;
+    }
+  });
+}
+
+// Tick feed every 8–15 seconds when war room is active
+function startFeedTicker() {
+  const tick = () => {
+    if (state.connected) addFeedItem();
+    setTimeout(tick, 8000 + Math.random() * 7000);
+  };
+  setTimeout(tick, 10000);
+}
+startFeedTicker();
+
+</script>
+</body>
+</html>
