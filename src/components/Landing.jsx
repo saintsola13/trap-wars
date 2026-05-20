@@ -56,11 +56,7 @@ export function Landing() {
               </tr>
             </thead>
             <tbody>
-              <tr><td className="rank-1">1</td><td>7xKp...3mNq</td><td>14</td><td>18.4 SOL</td></tr>
-              <tr><td className="rank-2">2</td><td>Bb9R...kW2z</td><td>11</td><td>12.1 SOL</td></tr>
-              <tr><td className="rank-3">3</td><td>5hJx...9pLm</td><td>9</td><td>9.5 SOL</td></tr>
-              <tr><td>4</td><td>Qz2F...vT8n</td><td>7</td><td>6.8 SOL</td></tr>
-              <tr><td>5</td><td>Yw4A...rN1c</td><td>5</td><td>4.2 SOL</td></tr>
+              <tr><td colSpan="4" style={{textAlign:'center',color:'#444',padding:'32px',fontFamily:'VT323, monospace',fontSize:'1.2rem',letterSpacing:'2px'}}>NO BATTLES YET. BE THE FIRST.</td></tr>
             </tbody>
           </table>
         </div>
