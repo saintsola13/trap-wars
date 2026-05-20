@@ -25,10 +25,9 @@ export function WalletModal() {
 
   if (!showWalletModal) return null;
 
-  // Show Phantom, Solflare, Backpack — installed first, then not-installed
-  // The wallet-adapter dynamically detects installed wallets; filter to our supported set
+  // Phantom + Solflare are passed as adapters; Backpack appears via Wallet Standard if installed.
   const TARGET = new Set(['Phantom', 'Solflare', 'Backpack']);
-  const targetWallets = wallets.filter(w => TARGET.has(w.adapter.name) || wallets.length <= 3);
+  const targetWallets = wallets.filter(w => TARGET.has(w.adapter.name));
   const installed = targetWallets.filter(w => w.readyState === WalletReadyState.Installed);
   const notInstalled = targetWallets.filter(w => w.readyState !== WalletReadyState.Installed);
   const ordered = [...installed, ...notInstalled];
@@ -39,6 +38,12 @@ export function WalletModal() {
         <button className="modal-close" onClick={() => setShowWalletModal(false)}>✕</button>
         <h2>CONNECT WALLET</h2>
         <p>Choose your weapon</p>
+
+        {ordered.length === 0 && (
+          <p style={{ color: '#555', fontFamily: 'sans-serif', fontSize: '0.9rem' }}>
+            Detecting wallets...
+          </p>
+        )}
 
         {ordered.map(({ adapter, readyState }) => {
           const isInstalled = readyState === WalletReadyState.Installed;

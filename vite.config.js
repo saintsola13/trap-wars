@@ -1,8 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { nodePolyfills } from 'vite-plugin-node-polyfills';
+import { resolve } from 'path';
 
 export default defineConfig({
+  resolve: {
+    // @sqds/multisig@2.1.4 declares index.mjs in exports but never ships it;
+    // alias directly to the CJS bundle to bypass the broken exports field.
+    alias: {
+      '@sqds/multisig': resolve('node_modules/@sqds/multisig/lib/index.js'),
+    },
+  },
   plugins: [
     react(),
     nodePolyfills({

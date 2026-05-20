@@ -54,7 +54,7 @@ export function BattlePanel() {
         : selectedStake);
 
       const durationSec = BATTLE_DURATIONS[selectedDuration];
-      const shareUrl = `${window.location.origin}${window.location.pathname}?battle=${multisigPda.toBase58()}`;
+      const shareUrl = `${window.location.origin}${window.location.pathname}?battle=${multisigPda.toBase58()}&stake=${stakeAmount}&dur=${selectedDuration}&p1=${publicKey.toBase58()}`;
 
       setBattle({
         id: multisigPda.toBase58(),

@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { useApp } from '../context/AppContext';
-import { PLATFORM_WALLET } from '../lib/constants';
-import { buildDepositTransaction, getVaultBalance } from '../lib/squads';
+import { PLATFORM_WALLET, BATTLE_DURATIONS } from '../lib/constants';
+import { buildDepositTransaction, getVaultBalance, deriveVaultPda } from '../lib/squads';
 import { getFeeInfo } from '../lib/nft';
 import { toFeePercent, truncateAddress } from '../lib/fees';
 import { snapshotPortfolio } from '../lib/jupiter';
@@ -21,7 +21,7 @@ export function JoinPanel({ battleId, onClose }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    // Try to read battle info from localStorage (if same device) or fetch from chain
+    // Same-device: try localStorage first
     const stored = localStorage.getItem('trapwars_battle_v2');
     if (stored) {
       try {
@@ -32,7 +32,32 @@ export function JoinPanel({ battleId, onClose }) {
         }
       } catch {}
     }
-    setError('Could not load battle data. Ask Player 1 to share their battle details.');
+
+    // Cross-device: reconstruct from URL params encoded in share link
+    const params = new URLSearchParams(window.location.search);
+    const stake = parseFloat(params.get('stake'));
+    const durLabel = params.get('dur');
+    const player1 = params.get('p1');
+
+    if (stake > 0 && durLabel && BATTLE_DURATIONS[durLabel] && player1) {
+      try {
+        const multisigPda = new PublicKey(battleId);
+        const vaultPda = deriveVaultPda(multisigPda);
+        setBattleMeta({
+          id: battleId,
+          vaultAddress: vaultPda.toBase58(),
+          player1,
+          stake,
+          duration: BATTLE_DURATIONS[durLabel],
+          durationLabel: durLabel,
+          feeBps: 300,
+          status: 'FUNDED',
+        });
+        return;
+      } catch {}
+    }
+
+    setError('Could not load battle data. Ask Player 1 to reshare the link.');
   }, [battleId]);
 
   useEffect(() => {

@@ -36,12 +36,19 @@ export async function buildCreateBattleMultisig({ connection, creator, platformP
     { key: new PublicKey(platformPubkey), permissions: Permissions.all() },
   ].sort((a, b) => a.key.toBase58().localeCompare(b.key.toBase58()));
 
+  const [programConfigPda] = multisig.getProgramConfigPda({});
+  const programConfig = await multisig.accounts.ProgramConfig.fromAccountAddress(
+    connection,
+    programConfigPda
+  );
+
   const { blockhash } = await connection.getLatestBlockhash();
 
   const ix = multisig.instructions.multisigCreateV2({
     createKey: createKey.publicKey,
     creator,
     multisigPda,
+    treasury: programConfig.treasury,
     configAuthority: null,
     threshold: 2,
     members,

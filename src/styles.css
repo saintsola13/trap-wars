@@ -1,5 +1,6 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body { width: 100%; height: 100%; background: #000; overflow-x: hidden; font-family: 'VT323', monospace; }
+html { background: #000; overflow-x: hidden; }
+body { width: 100%; background: #000; overflow-x: hidden; font-family: 'VT323', monospace; }
 
 /* ── HERO WRAPPER ── */
 .hero {

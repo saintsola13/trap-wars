@@ -3,7 +3,11 @@ import { useApp } from '../context/AppContext';
 export function Landing() {
   const { setShowWalletModal, setShowDegenModal } = useApp();
 
-  const scrollTo = id => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
+  const scrollTo = id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY, behavior: 'smooth' });
+  };
 
   return (
     <div id="landing">

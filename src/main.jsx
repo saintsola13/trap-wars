@@ -1,7 +1,8 @@
 import { StrictMode, useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
-import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
+import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
+import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 import { SOLANA_RPC_URL } from './lib/constants';
 import { AppProvider } from './context/AppContext';
 import { App } from './App';
