@@ -19,18 +19,24 @@ export function WalletModal() {
       setShowWalletModal(false);
       showToast(`Connecting to ${walletName}...`);
     } catch (e) {
-      showToast('Connection failed. Is the wallet installed?');
+      showToast('Connection failed. Try opening in your wallet browser.');
     }
   }, [select, setShowWalletModal, showToast]);
 
   if (!showWalletModal) return null;
 
-  // Phantom + Solflare are passed as adapters; Backpack appears via Wallet Standard if installed.
   const TARGET = new Set(['Phantom', 'Solflare', 'Backpack']);
   const targetWallets = wallets.filter(w => TARGET.has(w.adapter.name));
-  const installed = targetWallets.filter(w => w.readyState === WalletReadyState.Installed);
-  const notInstalled = targetWallets.filter(w => w.readyState !== WalletReadyState.Installed);
-  const ordered = [...installed, ...notInstalled];
+
+  // On mobile, wallets are Loadable (deep link) not Installed (extension)
+  // Allow connecting to both Installed and Loadable
+  const canConnect = (readyState) =>
+    readyState === WalletReadyState.Installed ||
+    readyState === WalletReadyState.Loadable;
+
+  const available = targetWallets.filter(w => canConnect(w.readyState));
+  const unavailable = targetWallets.filter(w => !canConnect(w.readyState));
+  const ordered = [...available, ...unavailable];
 
   return (
     <div className="modal-bg active" onClick={e => e.target === e.currentTarget && setShowWalletModal(false)}>
@@ -39,21 +45,15 @@ export function WalletModal() {
         <h2>CONNECT WALLET</h2>
         <p>Choose your weapon</p>
 
-        {ordered.length === 0 && (
-          <p style={{ color: '#555', fontFamily: 'sans-serif', fontSize: '0.9rem' }}>
-            Detecting wallets...
-          </p>
-        )}
-
         {ordered.map(({ adapter, readyState }) => {
-          const isInstalled = readyState === WalletReadyState.Installed;
+          const enabled = canConnect(readyState);
           return (
             <button
               key={adapter.name}
               className="wallet-btn"
-              onClick={() => isInstalled && handleConnect(adapter.name)}
-              disabled={!isInstalled}
-              title={isInstalled ? '' : `Install ${adapter.name} first`}
+              onClick={() => enabled && handleConnect(adapter.name)}
+              disabled={!enabled}
+              title={enabled ? '' : `Install ${adapter.name} first`}
             >
               <img
                 src={WALLET_LOGOS[adapter.name] || adapter.icon}
@@ -61,7 +61,7 @@ export function WalletModal() {
                 alt=""
               />
               {adapter.name.toUpperCase()}
-              {!isInstalled && <span className="not-installed">NOT INSTALLED</span>}
+              {!enabled && <span className="not-installed">NOT AVAILABLE</span>}
             </button>
           );
         })}
