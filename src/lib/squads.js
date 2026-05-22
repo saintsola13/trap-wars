@@ -35,11 +35,8 @@ export async function buildCreateBattleMultisig({ connection, creator, platformP
     { key: new PublicKey(platformPubkey), permissions: Permissions.all() },
   ];
 
-  const [programConfigPda] = multisig.getProgramConfigPda({});
-  const programConfig = await multisig.accounts.ProgramConfig.fromAccountAddress(
-    connection,
-    programConfigPda
-  );
+  // Hardcode Squads v4 mainnet treasury — avoids RPC call to program config
+  const SQUADS_TREASURY = new PublicKey('BSTq9w3kZwNwpBXJEvTZz2G9ZTNY7BLdbxGd3SqNPMZy');
 
   const { blockhash } = await connection.getLatestBlockhash();
 
@@ -47,7 +44,7 @@ export async function buildCreateBattleMultisig({ connection, creator, platformP
     createKey: createKey.publicKey,
     creator,
     multisigPda,
-    treasury: programConfig.treasury,
+    treasury: SQUADS_TREASURY,
     configAuthority: null,
     threshold: 2, // Phase 3: 2-of-2, player + platform both must approve
     members,
