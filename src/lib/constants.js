@@ -1,5 +1,5 @@
 export const SOLANA_RPC_URL =
-  import.meta.env.VITE_RPC_URL || 'https://api.mainnet-beta.solana.com';
+  import.meta.env.VITE_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=282628c0-7331-4c9a-b997-cdd22dea9e25';
 
 // Platform fee in basis points (300 = 3%)
 export const PLATFORM_FEE_BPS = 300;
