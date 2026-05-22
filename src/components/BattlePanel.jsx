@@ -82,7 +82,7 @@ export function BattlePanel() {
       showToast('Battle created! Deposit to lock it in.');
     } catch (e) {
       console.error(e);
-      showToast(e.message?.includes('rejected') ? 'Transaction rejected.' : 'Failed to create battle.');
+      showToast(e.message?.includes('rejected') ? 'Transaction rejected.' : `Failed: ${e.message?.slice(0, 80) || 'unknown error'}`);
     } finally {
       setCreating(false);
     }
