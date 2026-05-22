@@ -2,17 +2,23 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { useApp } from '../context/AppContext';
-import { TREASURY_WALLET, PLATFORM_WALLET } from '../lib/constants';
+import { TREASURY_WALLET, PLATFORM_WALLET, COSIGNER_API_URL } from '../lib/constants';
 import {
   getTokenPrices,
   evaluatePortfolio,
   calcPercentChange,
   collectMints,
 } from '../lib/jupiter';
-import { buildSettlementProposal, deriveMultisigPda } from '../lib/squads';
+import {
+  buildSettlementProposal,
+  buildProposalCreate,
+  buildProposalApprove,
+  buildVaultExecute,
+  deriveMultisigPda,
+} from '../lib/squads';
 import { toLamports, calcFeeAmountSol, calcWinnerAmountSol, toFeePercent, truncateAddress } from '../lib/fees';
 
-const REFRESH_INTERVAL_MS = 30_000; // refresh Jupiter prices every 30s
+const REFRESH_INTERVAL_MS = 30_000;
 
 export function ActiveBattle() {
   const { connection } = useConnection();
@@ -30,7 +36,7 @@ export function ActiveBattle() {
   const p1InitialRef = useRef(null);
   const p2InitialRef = useRef(null);
 
-  // ── PRICE REFRESH ─────────────────────────────────────────────────────────
+  // Price refresh
   const refreshPrices = useCallback(async () => {
     if (!battle?.player1Snapshot || !battle?.player2Snapshot) return;
 
@@ -43,7 +49,6 @@ export function ActiveBattle() {
       evaluatePortfolio(battle.player2Snapshot, prices),
     ]);
 
-    // Compute initial values once
     if (p1InitialRef.current === null) {
       p1InitialRef.current = await evaluatePortfolio(battle.player1Snapshot, prices);
     }
@@ -64,10 +69,9 @@ export function ActiveBattle() {
     return () => clearInterval(interval);
   }, [battle?.status, refreshPrices]);
 
-  // ── COUNTDOWN TIMER ───────────────────────────────────────────────────────
+  // Countdown timer
   useEffect(() => {
     if (!battle?.endTime) return;
-
     const tick = () => {
       const remaining = Math.max(0, battle.endTime - Date.now());
       setTimeLeft(remaining);
@@ -77,7 +81,7 @@ export function ActiveBattle() {
     return () => clearInterval(interval);
   }, [battle?.endTime]);
 
-  // ── SETTLEMENT ────────────────────────────────────────────────────────────
+  // Settlement - Phase 3: 2-of-2 multisig flow
   const handleSettle = useCallback(async () => {
     if (!publicKey || !battle) return;
     if (p1Score === null || p2Score === null) {
@@ -91,24 +95,84 @@ export function ActiveBattle() {
     const totalPot = battle.stake * 2;
     const feeLamports = toLamports(calcFeeAmountSol(totalPot, battle.feeBps));
     const winnerLamports = toLamports(totalPot) - feeLamports;
-
-    showToast('Building settlement transaction...');
+    const multisigPda = deriveMultisigPda(battle.createKey);
+    const TX_INDEX = 1;
 
     try {
-      const multisigPda = deriveMultisigPda(battle.createKey);
-      const tx = await buildSettlementProposal({
+      // Step 1: Create vault transaction (payout proposal)
+      showToast('Step 1/4: Proposing settlement...');
+      const proposalTx = await buildSettlementProposal({
         connection,
         multisigPda,
-        transactionIndex: 1,
+        transactionIndex: TX_INDEX,
         proposer: publicKey,
         winnerPubkey: winner,
         treasuryPubkey: TREASURY_WALLET,
         winnerLamports,
         feeLamports,
       });
+      const proposalSig = await sendTransaction(proposalTx, connection);
+      await connection.confirmTransaction(proposalSig, 'confirmed');
 
-      const sig = await sendTransaction(tx, connection);
-      await connection.confirmTransaction(sig, 'confirmed');
+      // Step 2: Create proposal (make it voteable)
+      showToast('Step 2/4: Creating proposal...');
+      const createProposalTx = await buildProposalCreate({
+        connection,
+        multisigPda,
+        transactionIndex: TX_INDEX,
+        creator: publicKey,
+      });
+      const createProposalSig = await sendTransaction(createProposalTx, connection);
+      await connection.confirmTransaction(createProposalSig, 'confirmed');
+
+      // Step 3: Player approves
+      showToast('Step 3/4: Your approval...');
+      const playerApproveTx = await buildProposalApprove({
+        connection,
+        multisigPda,
+        transactionIndex: TX_INDEX,
+        member: publicKey,
+      });
+      const playerApproveSig = await sendTransaction(playerApproveTx, connection);
+      await connection.confirmTransaction(playerApproveSig, 'confirmed');
+
+      // Step 4: Platform co-signs via backend
+      showToast('Step 4/4: Platform co-signing...');
+      const cosignRes = await fetch(`${COSIGNER_API_URL}/cosign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          multisigPda: multisigPda.toBase58(),
+          transactionIndex: TX_INDEX,
+          winner,
+          loser,
+          player1: battle.player1,
+          player2: battle.player2,
+          player1Snapshot: battle.player1Snapshot,
+          player2Snapshot: battle.player2Snapshot,
+          battleEndTime: battle.endTime,
+          winnerLamports,
+          feeLamports,
+        }),
+      });
+      if (!cosignRes.ok) {
+        const err = await cosignRes.json();
+        throw new Error(`Platform co-sign failed: ${err.error}`);
+      }
+      const { sig: cosignSig } = await cosignRes.json();
+
+      // Execute vault transaction (threshold met, funds released)
+      showToast('Executing payout...');
+      const executeTx = await buildVaultExecute({
+        connection,
+        multisigPda,
+        transactionIndex: TX_INDEX,
+        executor: publicKey,
+        winnerPubkey: winner,
+        treasuryPubkey: TREASURY_WALLET,
+      });
+      const executeSig = await sendTransaction(executeTx, connection);
+      await connection.confirmTransaction(executeSig, 'confirmed');
 
       setBattle(prev => ({
         ...prev,
@@ -117,10 +181,11 @@ export function ActiveBattle() {
         loser,
         player1Score: p1Score,
         player2Score: p2Score,
-        settleSig: sig,
+        settleSig: executeSig,
+        cosignSig,
       }));
       setSettled(true);
-      showToast('Settlement proposed! Platform co-signature required to execute.');
+      showToast('Battle settled. Funds released!');
     } catch (e) {
       console.error(e);
       showToast(e.message?.includes('rejected') ? 'Rejected.' : 'Settlement failed: ' + e.message);
@@ -158,13 +223,13 @@ export function ActiveBattle() {
     <div>
       {battle.status === 'SETTLED' ? (
         <>
-          <h2>{isWinner ? '🏆 YOU WON' : '💀 YOU LOST'}</h2>
+          <h2>{isWinner ? 'YOU WON' : 'YOU LOST'}</h2>
           <p className="sub">BATTLE SETTLED</p>
 
-          <div className={`winner-banner`} style={!isWinner ? { borderColor: '#f87171' } : {}}>
+          <div className="winner-banner" style={!isWinner ? { borderColor: '#f87171' } : {}}>
             <h3>{isWinner ? 'VICTORY' : 'DEFEAT'}</h3>
             <p style={{ color: '#aaa', fontFamily: 'sans-serif', fontSize: '0.9rem', marginTop: '8px', marginBottom: 0 }}>
-              {isWinner ? `Winner: ${truncateAddress(battle.winner)}` : `Winner: ${truncateAddress(battle.winner)}`}
+              Winner: {truncateAddress(battle.winner)}
             </p>
           </div>
 
@@ -175,7 +240,7 @@ export function ActiveBattle() {
             </div>
             <div className="fee-row">
               <span>Platform fee ({toFeePercent(battle.feeBps)})</span>
-              <span>−{feeAmt.toFixed(4)} SOL</span>
+              <span>-{feeAmt.toFixed(4)} SOL</span>
             </div>
             <div className="fee-row">
               <span>Winner receives</span>
@@ -188,7 +253,7 @@ export function ActiveBattle() {
               <div className="you-badge">P1</div>
               <div className="player-addr">{truncateAddress(battle.player1)}</div>
               <div className={`player-score ${(battle.player1Score ?? 0) >= 0 ? 'up' : 'down'}`}>
-                {battle.player1Score !== null ? `${battle.player1Score >= 0 ? '+' : ''}${battle.player1Score.toFixed(2)}%` : '—'}
+                {battle.player1Score !== null ? `${battle.player1Score >= 0 ? '+' : ''}${battle.player1Score.toFixed(2)}%` : '-'}
               </div>
               <div className="score-label">P&L</div>
             </div>
@@ -196,7 +261,7 @@ export function ActiveBattle() {
               <div className="you-badge">P2</div>
               <div className="player-addr">{truncateAddress(battle.player2)}</div>
               <div className={`player-score ${(battle.player2Score ?? 0) >= 0 ? 'up' : 'down'}`}>
-                {battle.player2Score !== null ? `${battle.player2Score >= 0 ? '+' : ''}${battle.player2Score.toFixed(2)}%` : '—'}
+                {battle.player2Score !== null ? `${battle.player2Score >= 0 ? '+' : ''}${battle.player2Score.toFixed(2)}%` : '-'}
               </div>
               <div className="score-label">P&L</div>
             </div>
@@ -204,11 +269,7 @@ export function ActiveBattle() {
 
           {battle.settleSig && (
             <p style={{ color: '#555', fontSize: '0.75rem', fontFamily: 'monospace', marginTop: '12px' }}>
-              Settlement proposal: {truncateAddress(battle.settleSig, 8)}
-              <br />
-              <span style={{ color: '#444', fontSize: '0.7rem' }}>
-                Awaiting platform co-signature to release funds.
-              </span>
+              Settled: {truncateAddress(battle.settleSig, 8)}
             </p>
           )}
 
@@ -226,7 +287,7 @@ export function ActiveBattle() {
 
           <div className="timer-label">TIME REMAINING</div>
           <div className="timer-display" style={timeExpired ? { color: '#f87171' } : {}}>
-            {timeExpired ? 'TIME\'S UP' : formatTime(timeLeft)}
+            {timeExpired ? "TIME'S UP" : formatTime(timeLeft)}
           </div>
 
           <div className="battle-live">
@@ -234,7 +295,7 @@ export function ActiveBattle() {
               {p1IsMe && <div className="you-badge">YOU</div>}
               <div className="player-addr">{truncateAddress(battle.player1)}</div>
               <div className={`player-score${p1Score !== null ? (p1Score >= 0 ? ' up' : ' down') : ''}`}>
-                {p1Score !== null ? `${p1Score >= 0 ? '+' : ''}${p1Score.toFixed(2)}%` : '—'}
+                {p1Score !== null ? `${p1Score >= 0 ? '+' : ''}${p1Score.toFixed(2)}%` : '-'}
               </div>
               <div className="score-label">PORTFOLIO P&L</div>
               {p1ValueUsd !== null && (
@@ -248,7 +309,7 @@ export function ActiveBattle() {
               {p2IsMe && <div className="you-badge">YOU</div>}
               <div className="player-addr">{truncateAddress(battle.player2)}</div>
               <div className={`player-score${p2Score !== null ? (p2Score >= 0 ? ' up' : ' down') : ''}`}>
-                {p2Score !== null ? `${p2Score >= 0 ? '+' : ''}${p2Score.toFixed(2)}%` : '—'}
+                {p2Score !== null ? `${p2Score >= 0 ? '+' : ''}${p2Score.toFixed(2)}%` : '-'}
               </div>
               <div className="score-label">PORTFOLIO P&L</div>
               {p2ValueUsd !== null && (
@@ -281,7 +342,7 @@ export function ActiveBattle() {
           )}
 
           <p style={{ color: '#333', fontSize: '0.75rem', fontFamily: 'sans-serif', marginTop: '12px' }}>
-            Prices refresh every 30s via Jupiter · Score = portfolio % gain from battle start
+            Prices refresh every 30s via Jupiter. Score = portfolio % gain from battle start.
           </p>
         </>
       )}

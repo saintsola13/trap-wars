@@ -1,0 +1,15 @@
+{
+  "name": "trapwars-signer",
+  "version": "1.0.0",
+  "description": "Trap Wars platform co-signer API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@solana/web3.js": "^1.98.0",
+    "@sqds/multisig": "^2.1.3",
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  }
+}

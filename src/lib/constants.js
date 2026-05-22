@@ -10,9 +10,13 @@ export const HOLDER_FEE_BPS = 150;
 export const TREASURY_WALLET =
   import.meta.env.VITE_TREASURY_WALLET || 'GB6CqqrhVj8cZZDpvY1Kh77bvESbypEc4aFUWWFBK16y';
 
-// Platform wallet that co-signs settlements — needs corresponding backend signer
+// Platform co-signer wallet (Phase 3 keypair — public key only in frontend)
 export const PLATFORM_WALLET =
-  import.meta.env.VITE_PLATFORM_WALLET || 'GB6CqqrhVj8cZZDpvY1Kh77bvESbypEc4aFUWWFBK16y';
+  import.meta.env.VITE_PLATFORM_WALLET || 'G2YGgGN94wF5SbFgnXjTDFYEnQ7DTDoKZHNXLsZ8WX8g';
+
+// Co-signer API URL
+export const COSIGNER_API_URL =
+  import.meta.env.VITE_COSIGNER_API_URL || 'https://api.trapwars.win';
 
 // NFT collection mints — set via env vars
 export const BANDO_KIDS_COLLECTION_MINT =
