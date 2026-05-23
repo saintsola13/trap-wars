@@ -219,7 +219,38 @@
 
     <!-- 4. FEES -->
     <section>
-      <h2>04. Platform Fees</h2>
+      <h2>04. Scoring Methodology</h2>
+      <p>
+        The winner is determined by <span class="highlight">portfolio percentage gain</span> from the moment both players deposit — not raw profit, not dollar value, not trade volume. Percentage gain is the only metric that matters. This creates a level playing field regardless of wallet size.
+      </p>
+      <h3 style="color:#ffd700;margin-top:1.2rem;font-size:1rem;">What Gets Tracked</h3>
+      <ul>
+        <li>At deposit, Trap Wars takes a full snapshot of each wallet: every SPL token balance and the total SOL balance.</li>
+        <li>All tokens and SOL are priced in USD via the <span class="highlight">Jupiter Price API</span>, which aggregates real-time pricing across every major Solana DEX.</li>
+        <li>Total portfolio value at snapshot = <code style="background:#111;padding:2px 6px;border-radius:4px;font-size:0.85rem;">(SOL balance × SOL/USD) + Σ(token amount × token/USD)</code></li>
+      </ul>
+      <h3 style="color:#ffd700;margin-top:1.2rem;font-size:1rem;">Score Formula</h3>
+      <ul>
+        <li>Scores are refreshed every 30 seconds during the battle.</li>
+        <li>Score = <code style="background:#111;padding:2px 6px;border-radius:4px;font-size:0.85rem;">((Current Portfolio USD − Starting Portfolio USD) / Starting Portfolio USD) × 100</code></li>
+        <li>Displayed as a percentage gain or loss from your starting position.</li>
+        <li>The entire wallet is scored — not just trades made during the battle. All existing holdings count.</li>
+      </ul>
+      <h3 style="color:#ffd700;margin-top:1.2rem;font-size:1rem;">Tie Breaker</h3>
+      <ul>
+        <li>In the event of an exact tie in percentage gain, Player 1 (the battle creator) wins.</li>
+      </ul>
+      <h3 style="color:#ffd700;margin-top:1.2rem;font-size:1rem;">Example</h3>
+      <ul>
+        <li>Player 1 starts with $500 portfolio. Ends at $560. Score: <span class="highlight">+12%</span></li>
+        <li>Player 2 starts with $2,000 portfolio. Ends at $2,200. Score: <span class="highlight">+10%</span></li>
+        <li>Player 1 wins — despite making less in absolute dollars, their percentage gain was higher.</li>
+      </ul>
+    </section>
+
+    <!-- 05. PLATFORM FEES -->
+    <section>
+      <h2>05. Platform Fees</h2>
       <p>
         Trap Wars charges a <span class="highlight">3% platform fee</span> taken from the total pot
         at settlement. The winner receives the remaining 97%.
