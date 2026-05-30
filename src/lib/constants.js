@@ -11,8 +11,9 @@ export const TREASURY_WALLET =
   import.meta.env.VITE_TREASURY_WALLET || 'GB6CqqrhVj8cZZDpvY1Kh77bvESbypEc4aFUWWFBK16y';
 
 // Platform co-signer wallet (Phase 3 keypair — public key only in frontend)
-export const PLATFORM_WALLET =
-  import.meta.env.VITE_PLATFORM_WALLET || 'G2YGgGN94wF5SbFgnXjTDFYEnQ7DTDoKZHNXLsZ8WX8g';
+// NOTE: Hardcoded intentionally — must match the VPS co-signer keypair pubkey.
+// Do NOT override via VITE_PLATFORM_WALLET env var (Cloudflare had this set to treasury by mistake).
+export const PLATFORM_WALLET = 'G2YGgGN94wF5SbFgnXjTDFYEnQ7DTDoKZHNXLsZ8WX8g';
 
 // Co-signer API URL
 export const COSIGNER_API_URL =
