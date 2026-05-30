@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { useApp } from '../context/AppContext';
-import { PLATFORM_WALLET, BATTLE_DURATIONS } from '../lib/constants';
+import { PLATFORM_WALLET, BATTLE_DURATIONS, COSIGNER_API_URL } from '../lib/constants';
 import { buildDepositTransaction, getVaultBalance, deriveVaultPda } from '../lib/squads';
 import { getFeeInfo } from '../lib/nft';
 import { toFeePercent, truncateAddress } from '../lib/fees';
-import { snapshotPortfolio } from '../lib/jupiter';
+import { snapshotPortfolio, getTokenPrices, evaluatePortfolio, collectMints } from '../lib/jupiter';
 
 // Shown when Player 2 opens a shareable battle link
 export function JoinPanel({ battleId, onClose }) {
@@ -94,10 +94,16 @@ export function JoinPanel({ battleId, onClose }) {
       const sig = await sendTransaction(tx, connection);
       await connection.confirmTransaction(sig, 'confirmed');
 
+      // Take both snapshots at the same moment for fair baseline
       const [p2Snapshot, p1Snapshot] = await Promise.all([
         snapshotPortfolio(connection, publicKey),
         snapshotPortfolio(connection, new PublicKey(battleMeta.player1)),
       ]);
+
+      // Use the initialUsd values computed at join time — same price snapshot, fair baseline
+      // If snapshots were concurrent, prices are effectively same moment for both players
+      const player1InitialUsd = p1Snapshot.initialUsd || 0;
+      const player2InitialUsd = p2Snapshot.initialUsd || 0;
 
       const now = Date.now();
       const endTime = now + battleMeta.duration * 1000;
@@ -107,14 +113,33 @@ export function JoinPanel({ battleId, onClose }) {
         player2: publicKey.toBase58(),
         player2Snapshot: p2Snapshot,
         player1Snapshot: p1Snapshot,
+        player1InitialUsd,
+        player2InitialUsd,
         status: 'ACTIVE',
         startTime: now,
         endTime,
         player2DepositSig: sig,
-        feeBps: Math.min(feeInfo.feeBps, battleMeta.feeBps), // use best rate between both players
+        feeBps: Math.min(feeInfo.feeBps, battleMeta.feeBps ?? 300),
       };
 
       setBattle(updatedBattle);
+
+      // Notify server that P2 has joined
+      fetch(`${COSIGNER_API_URL}/battle/${battleId}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          player2: publicKey.toBase58(),
+          player1Snapshot: p1Snapshot,
+          player2Snapshot: p2Snapshot,
+          player1InitialUsd,
+          player2InitialUsd,
+          startTime: now,
+          endTime,
+          status: 'ACTIVE',
+        }),
+      }).catch(() => {});
+
       showToast(`Joined! Battle ends in ${battleMeta.durationLabel}.`);
       onClose();
     } catch (e) {
@@ -123,7 +148,7 @@ export function JoinPanel({ battleId, onClose }) {
     } finally {
       setJoining(false);
     }
-  }, [publicKey, connection, sendTransaction, battleMeta, feeInfo, setBattle, showToast, onClose]);
+  }, [publicKey, connection, sendTransaction, battleMeta, battleId, feeInfo, setBattle, showToast, onClose]);
 
   if (error) {
     return (

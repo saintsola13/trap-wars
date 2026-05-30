@@ -16,7 +16,7 @@ export async function getTokenPrices(mints) {
   }
 }
 
-// Returns { tokens: [{mint, amount}], solAmount }
+// Returns { tokens: [{mint, amount}], solAmount, initialUsd }
 export async function snapshotPortfolio(connection, walletPublicKey) {
   const [tokenAccounts, solBalance] = await Promise.all([
     connection.getParsedTokenAccountsByOwner(walletPublicKey, { programId: TOKEN_PROGRAM }),
@@ -30,7 +30,17 @@ export async function snapshotPortfolio(connection, walletPublicKey) {
     }))
     .filter(t => t.amount > 0);
 
-  return { tokens, solAmount: solBalance / 1e9 };
+  const solAmount = solBalance / 1e9;
+  const snapshot = { tokens, solAmount };
+
+  try {
+    const mints = [WSOL_MINT, ...tokens.map(t => t.mint)];
+    const prices = await getTokenPrices(mints);
+    const initialUsd = await evaluatePortfolio(snapshot, prices);
+    return { tokens, solAmount, initialUsd };
+  } catch {
+    return { tokens, solAmount, initialUsd: 0 };
+  }
 }
 
 // Returns total portfolio value in USD terms (using Jupiter prices)

@@ -32,9 +32,20 @@ export function ActiveBattle() {
   const [timeLeft, setTimeLeft] = useState(null);
   const [settling, setSettling] = useState(false);
   const [settled, setSettled] = useState(battle?.status === 'SETTLED');
+  const [warningDismissed, setWarningDismissed] = useState(false);
 
   const p1InitialRef = useRef(null);
   const p2InitialRef = useRef(null);
+
+  // Seed initial refs from stored initialUsd (fair baseline computed at join time)
+  useEffect(() => {
+    if (battle?.player1InitialUsd && p1InitialRef.current === null) {
+      p1InitialRef.current = battle.player1InitialUsd;
+    }
+    if (battle?.player2InitialUsd && p2InitialRef.current === null) {
+      p2InitialRef.current = battle.player2InitialUsd;
+    }
+  }, [battle?.player1InitialUsd, battle?.player2InitialUsd]);
 
   // Price refresh
   const refreshPrices = useCallback(async () => {
@@ -49,11 +60,12 @@ export function ActiveBattle() {
       evaluatePortfolio(battle.player2Snapshot, prices),
     ]);
 
+    // Fall back to current prices if no stored initial value
     if (p1InitialRef.current === null) {
-      p1InitialRef.current = await evaluatePortfolio(battle.player1Snapshot, prices);
+      p1InitialRef.current = battle.player1InitialUsd || await evaluatePortfolio(battle.player1Snapshot, prices);
     }
     if (p2InitialRef.current === null) {
-      p2InitialRef.current = await evaluatePortfolio(battle.player2Snapshot, prices);
+      p2InitialRef.current = battle.player2InitialUsd || await evaluatePortfolio(battle.player2Snapshot, prices);
     }
 
     setP1ValueUsd(p1Now);
@@ -150,6 +162,8 @@ export function ActiveBattle() {
           player2: battle.player2,
           player1Snapshot: battle.player1Snapshot,
           player2Snapshot: battle.player2Snapshot,
+          player1InitialUsd: battle.player1InitialUsd ?? null,
+          player2InitialUsd: battle.player2InitialUsd ?? null,
           battleEndTime: battle.endTime,
           winnerLamports,
           feeLamports,
@@ -186,6 +200,19 @@ export function ActiveBattle() {
       }));
       setSettled(true);
       showToast('Battle settled. Funds released!');
+
+      // Notify server of settlement result
+      fetch(`${COSIGNER_API_URL}/battle/${battle.id}/settle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          winner,
+          player1Score: p1Score,
+          player2Score: p2Score,
+          settleSig: executeSig,
+        }),
+      }).catch(() => {});
+
     } catch (e) {
       console.error(e);
       showToast(e.message?.includes('rejected') ? 'Rejected.' : 'Settlement failed: ' + e.message);
@@ -284,6 +311,31 @@ export function ActiveBattle() {
       ) : (
         <>
           <h2>BATTLE LIVE</h2>
+
+          {/* Device switch warning */}
+          {!warningDismissed && (
+            <div style={{
+              background: '#fef3c7',
+              border: '1px solid #f59e0b',
+              borderRadius: '8px',
+              padding: '10px 14px',
+              marginBottom: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '8px',
+            }}>
+              <span style={{ color: '#92400e', fontSize: '0.8rem', fontFamily: 'sans-serif', lineHeight: '1.4' }}>
+                ⚠️ DO NOT SWITCH DEVICES — Battle state is tied to this browser. Switching devices may prevent settlement.
+              </span>
+              <button
+                onClick={() => setWarningDismissed(true)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#92400e', fontSize: '1rem', padding: '0 4px', flexShrink: 0 }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           <div className="timer-label">TIME REMAINING</div>
           <div className="timer-display" style={timeExpired ? { color: '#f87171' } : {}}>

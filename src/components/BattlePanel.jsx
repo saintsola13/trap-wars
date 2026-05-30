@@ -8,8 +8,16 @@ import {
   BATTLE_DURATIONS,
   PLATFORM_WALLET,
   TREASURY_WALLET,
+  COSIGNER_API_URL,
 } from '../lib/constants';
-import { buildCreateBattleMultisig, buildDepositTransaction, deriveVaultPda } from '../lib/squads';
+import {
+  buildCreateBattleMultisig,
+  buildDepositTransaction,
+  deriveVaultPda,
+  deriveMultisigPda,
+  buildProposalApprove,
+  buildVaultExecute,
+} from '../lib/squads';
 import { getFeeInfo } from '../lib/nft';
 import { toFeePercent, calcFeeAmountSol, calcWinnerAmountSol, truncateAddress } from '../lib/fees';
 import { snapshotPortfolio } from '../lib/jupiter';
@@ -24,6 +32,8 @@ export function BattlePanel() {
   const [feeInfo, setFeeInfo] = useState({ feeBps: 300, isHolder: false, collectionName: null });
   const [creating, setCreating] = useState(false);
   const [depositing, setDepositing] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [warningDismissed, setWarningDismissed] = useState(false);
 
   // Load fee info based on NFT holdings
   useEffect(() => {
@@ -70,6 +80,8 @@ export function BattlePanel() {
         endTime: null,
         player1Snapshot: null,
         player2Snapshot: null,
+        player1InitialUsd: null,
+        player2InitialUsd: null,
         player1Score: null,
         player2Score: null,
         winner: null,
@@ -78,6 +90,23 @@ export function BattlePanel() {
         shareUrl,
         createSig: sig,
       });
+
+      // Register battle server-side
+      fetch(`${COSIGNER_API_URL}/battle/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          multisigPda: multisigPda.toBase58(),
+          vaultAddress: vaultPda.toBase58(),
+          player1: publicKey.toBase58(),
+          stake: stakeAmount,
+          durationSec,
+          durationLabel: selectedDuration,
+          feeBps: feeInfo.feeBps,
+          createKey: createKeyBase58,
+          shareUrl,
+        }),
+      }).catch(() => {});
 
       showToast('Battle created! Deposit to lock it in.');
     } catch (e) {
@@ -106,13 +135,14 @@ export function BattlePanel() {
       const sig = await sendTransaction(tx, connection);
       await connection.confirmTransaction(sig, 'confirmed');
 
-      // Snapshot portfolio at deposit time (battle start for player 1)
+      // Snapshot portfolio at deposit time (holdings baseline for player 1)
       const snapshot = await snapshotPortfolio(connection, publicKey);
 
       setBattle(prev => ({
         ...prev,
         status: 'FUNDED',
         player1Snapshot: snapshot,
+        player1InitialUsd: snapshot.initialUsd || null,
         player1DepositSig: sig,
       }));
 
@@ -125,10 +155,72 @@ export function BattlePanel() {
     }
   }, [publicKey, connection, sendTransaction, battle, setBattle, showToast]);
 
-  // ── CANCEL LOBBY ──────────────────────────────────────────────────────────
+  // ── CANCEL LOBBY (local only) ─────────────────────────────────────────────
   const handleCancel = useCallback(() => {
     clearBattle();
   }, [clearBattle]);
+
+  // ── CANCEL & REFUND (on-chain via Squads) ────────────────────────────────
+  const handleCancelRefund = useCallback(async () => {
+    if (!publicKey || !battle) return;
+    if (!window.confirm('Cancel this battle? Your SOL will be refunded minus gas.')) return;
+
+    setCancelling(true);
+    showToast('Requesting refund from platform...');
+
+    try {
+      // Server creates vault tx + proposal + platform co-signs (1-of-2)
+      const res = await fetch(`${COSIGNER_API_URL}/battle/${battle.id}/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestor: publicKey.toBase58() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Cancel failed');
+
+      // If no vault tx was needed (empty vault), we're done
+      if (data.sig === null) {
+        clearBattle();
+        showToast('Battle cancelled!');
+        return;
+      }
+
+      const multisigPda = deriveMultisigPda(battle.createKey);
+      const txIndex = data.transactionIndex;
+
+      // Player approves the cancel proposal (2-of-2 threshold met)
+      showToast('Approve cancel on your wallet (1/2)...');
+      const approveTx = await buildProposalApprove({
+        connection,
+        multisigPda,
+        transactionIndex: txIndex,
+        member: publicKey,
+      });
+      const approveSig = await sendTransaction(approveTx, connection);
+      await connection.confirmTransaction(approveSig, 'confirmed');
+
+      // Player executes the refund
+      showToast('Execute refund on your wallet (2/2)...');
+      const executeTx = await buildVaultExecute({
+        connection,
+        multisigPda,
+        transactionIndex: txIndex,
+        executor: publicKey,
+        winnerPubkey: publicKey.toBase58(),
+        treasuryPubkey: TREASURY_WALLET,
+      });
+      const executeSig = await sendTransaction(executeTx, connection);
+      await connection.confirmTransaction(executeSig, 'confirmed');
+
+      clearBattle();
+      showToast('Refunded!');
+    } catch (e) {
+      console.error(e);
+      showToast(e.message?.includes('rejected') ? 'Cancelled.' : `Refund error: ${e.message?.slice(0, 80)}`);
+    } finally {
+      setCancelling(false);
+    }
+  }, [publicKey, battle, connection, sendTransaction, clearBattle, showToast]);
 
   // ── COPY SHARE LINK ───────────────────────────────────────────────────────
   const handleCopy = useCallback(() => {
@@ -148,6 +240,31 @@ export function BattlePanel() {
         <h2>ENTER THE WAR</h2>
         <p className="sub">WAITING FOR OPPONENT</p>
 
+        {/* Device switch warning */}
+        {!warningDismissed && (
+          <div style={{
+            background: '#fef3c7',
+            border: '1px solid #f59e0b',
+            borderRadius: '8px',
+            padding: '10px 14px',
+            marginBottom: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '8px',
+          }}>
+            <span style={{ color: '#92400e', fontSize: '0.8rem', fontFamily: 'sans-serif', lineHeight: '1.4' }}>
+              ⚠️ DO NOT SWITCH DEVICES — Battle state is tied to this browser. Switching devices may prevent settlement.
+            </span>
+            <button
+              onClick={() => setWarningDismissed(true)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#92400e', fontSize: '1rem', padding: '0 4px', flexShrink: 0 }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         <div className="lobby-state active">
           <p style={{ color: '#aaa', marginBottom: '8px', fontSize: '0.95rem', fontFamily: 'sans-serif' }}>
             Share this link with your opponent
@@ -166,6 +283,14 @@ export function BattlePanel() {
             onClick={handleCancel}
           >
             CANCEL
+          </button>
+          <button
+            className="action-btn"
+            style={{ marginTop: '8px', background: '#1a0000', border: '1px solid #7f1d1d', fontSize: '0.95rem', color: '#fca5a5' }}
+            onClick={handleCancelRefund}
+            disabled={cancelling}
+          >
+            {cancelling ? <><span className="spinner" />CANCELLING...</> : 'CANCEL & REFUND'}
           </button>
         </div>
 
