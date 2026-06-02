@@ -43,6 +43,36 @@ export function BattlePanel() {
       .catch(() => {});
   }, [connection, publicKey]);
 
+  // Poll co-signer API while waiting for opponent — detects when P2 joins from another device
+  useEffect(() => {
+    if (!battle || battle.status !== 'FUNDED' || battle.player1 !== publicKey?.toBase58()) return;
+
+    const poll = setInterval(async () => {
+      try {
+        const res = await fetch(`${COSIGNER_API_URL}/battle/${battle.id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.status === 'ACTIVE' && data.player2) {
+          setBattle(prev => ({
+            ...prev,
+            player2: data.player2,
+            player1Snapshot: data.player1_snapshot,
+            player2Snapshot: data.player2_snapshot,
+            player1InitialUsd: data.player1_initial_usd,
+            player2InitialUsd: data.player2_initial_usd,
+            startTime: data.start_time,
+            endTime: data.end_time,
+            status: 'ACTIVE',
+          }));
+          showToast('Opponent joined! Battle is live.');
+          clearInterval(poll);
+        }
+      } catch {}
+    }, 4000);
+
+    return () => clearInterval(poll);
+  }, [battle?.id, battle?.status, publicKey]); // eslint-disable-line
+
   // ── CREATE BATTLE ─────────────────────────────────────────────────────────
   const handleCreateBattle = useCallback(async () => {
     if (!publicKey) return;
