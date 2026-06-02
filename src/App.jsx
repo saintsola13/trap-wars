@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useApp } from './context/AppContext';
+import { COSIGNER_API_URL } from './lib/constants';
 import { Landing } from './components/Landing';
 import { WarRoom } from './components/WarRoom';
 import { WalletModal } from './components/WalletModal';
@@ -12,6 +13,40 @@ export function App() {
   const { connected, publicKey } = useWallet();
   const { showToast, setShowWalletModal } = useApp();
   const [joinBattleId, setJoinBattleId] = useState(null);
+
+  // ?recover=battleId — restore lost battle state from server (e.g. localStorage cleared)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const recoverId = params.get('recover');
+    if (!recoverId) return;
+    fetch(`${COSIGNER_API_URL}/battle/${recoverId}`)
+      .then(r => r.json())
+      .then(data => {
+        if (!data.id) return;
+        const battle = {
+          id: data.id,
+          createKey: data.create_key,
+          vaultAddress: data.vault_address,
+          player1: data.player1,
+          player2: data.player2,
+          stake: data.stake,
+          status: data.status,
+          startTime: data.start_time,
+          endTime: data.end_time,
+          feeBps: data.fee_bps,
+          durationLabel: data.duration_label,
+          shareUrl: data.share_url,
+          player1InitialUsd: data.player1_initial_usd,
+          player2InitialUsd: data.player2_initial_usd,
+          player1Snapshot: data.player1_snapshot,
+          player2Snapshot: data.player2_snapshot,
+        };
+        localStorage.setItem('trapwars_battle_v2', JSON.stringify(battle));
+        window.history.replaceState({}, '', window.location.pathname);
+        window.location.reload();
+      })
+      .catch(() => {});
+  }, []);
 
   // Check for ?battle=... in URL (Player 2 flow)
   // Persists to BOTH sessionStorage AND localStorage — mobile wallets (Phantom deep-link)
