@@ -89,6 +89,13 @@ export function BattlePanel() {
       const sig = await sendTransaction(tx, connection);
       await connection.confirmTransaction(sig, 'confirmed');
 
+      // CRITICAL: verify multisig was actually created on-chain.
+      // If it failed, do NOT deposit — funds would be permanently locked.
+      const txDetails = await connection.getTransaction(sig, { maxSupportedTransactionVersion: 0 });
+      if (txDetails?.meta?.err) {
+        throw new Error('Multisig creation failed on-chain. No funds deposited. Try again.');
+      }
+
       const stakeAmount = parseFloat(isDegenMode && selectedStake !== DEGEN_STAKE
         ? selectedStake
         : selectedStake);
