@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trap Wars — Recovering Battle</title>
+  <style>
+    body { background: #0a0a0a; color: #fff; font-family: monospace; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .box { text-align: center; padding: 32px; }
+    h1 { color: #4ade80; font-size: 1.4rem; margin-bottom: 16px; }
+    p { color: #aaa; font-size: 0.95rem; }
+    .err { color: #f87171; }
+  </style>
+</head>
+<body>
+<div class="box">
+  <h1>⚔️ TRAP WARS</h1>
+  <p id="msg">Restoring battle state...</p>
+</div>
+<script>
+(async function() {
+  const msg = document.getElementById('msg');
+  const battleId = location.hash.replace('#','') || new URLSearchParams(location.search).get('id');
+  if (!battleId) { msg.textContent = 'No battle ID provided.'; msg.className='err'; return; }
+
+  try {
+    const res = await fetch('https://api.trapwars.win/battle/' + battleId);
+    if (!res.ok) throw new Error('Battle not found');
+    const data = await res.json();
+
+    const battle = {
+      id: data.id,
+      createKey: data.create_key,
+      vaultAddress: data.vault_address,
+      player1: data.player1,
+      player2: data.player2,
+      stake: data.stake,
+      status: data.status,
+      startTime: data.start_time,
+      endTime: data.end_time,
+      feeBps: data.fee_bps,
+      durationLabel: data.duration_label,
+      shareUrl: data.share_url,
+      player1InitialUsd: data.player1_initial_usd,
+      player2InitialUsd: data.player2_initial_usd,
+      player1Snapshot: data.player1_snapshot,
+      player2Snapshot: data.player2_snapshot,
+    };
+
+    localStorage.setItem('trapwars_battle_v2', JSON.stringify(battle));
+    msg.textContent = 'Battle restored. Redirecting...';
+    setTimeout(() => { window.location.href = '/'; }, 800);
+  } catch(e) {
+    msg.textContent = 'Error: ' + e.message;
+    msg.className = 'err';
+  }
+})();
+</script>
+</body>
+</html>

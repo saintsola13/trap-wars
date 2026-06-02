@@ -85,6 +85,44 @@ app.get('/health', (req, res) => {
   res.json({ ok: true, pubkey: platformKeypair.publicKey.toBase58() });
 });
 
+// ─── BATTLE RECOVERY PAGE ─────────────────────────────────────────────────────
+// GET /recover/:id — serves a page that restores battle state to localStorage then redirects
+app.get('/recover/:id', (req, res) => {
+  const battle = db.prepare('SELECT * FROM battles WHERE id = ?').get(req.params.id);
+  if (!battle) return res.status(404).send('Battle not found');
+  if (battle.player1_snapshot) battle.player1_snapshot = JSON.parse(battle.player1_snapshot);
+  if (battle.player2_snapshot) battle.player2_snapshot = JSON.parse(battle.player2_snapshot);
+
+  const battleObj = {
+    id: battle.id,
+    createKey: battle.create_key,
+    vaultAddress: battle.vault_address,
+    player1: battle.player1,
+    player2: battle.player2,
+    stake: battle.stake,
+    status: battle.status,
+    startTime: battle.start_time,
+    endTime: battle.end_time,
+    feeBps: battle.fee_bps,
+    durationLabel: battle.duration_label,
+    shareUrl: battle.share_url,
+    player1InitialUsd: battle.player1_initial_usd,
+    player2InitialUsd: battle.player2_initial_usd,
+    player1Snapshot: battle.player1_snapshot,
+    player2Snapshot: battle.player2_snapshot,
+  };
+
+  const script = JSON.stringify(battleObj);
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Recovering...</title></head><body>
+<p style="font-family:monospace;padding:20px">Restoring battle... redirecting to Trap Wars.</p>
+<script>
+try{
+localStorage.setItem('trapwars_battle_v2', ${JSON.stringify(script)});
+}catch(e){}
+window.location.href = 'https://trapwars.win';
+</script></body></html>`);
+});
+
 // ─── BATTLE REGISTRY ENDPOINTS ────────────────────────────────────────────────
 
 /** POST /battle/register — called when P1 creates a battle */
