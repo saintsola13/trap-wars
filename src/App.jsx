@@ -14,11 +14,55 @@ export function App() {
   const [joinBattleId, setJoinBattleId] = useState(null);
 
   // Check for ?battle=... in URL (Player 2 flow)
+  // Persists to BOTH sessionStorage AND localStorage — mobile wallets (Phantom deep-link)
+  // can wipe sessionStorage on redirect; localStorage survives.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const battleId = params.get('battle');
-    if (battleId) setJoinBattleId(battleId);
+    if (battleId) {
+      setJoinBattleId(battleId);
+      sessionStorage.setItem('trapwars_pending_join', window.location.search);
+      localStorage.setItem('trapwars_pending_join', window.location.search);
+    } else {
+      // Fallback: try sessionStorage first, then localStorage
+      const pending =
+        sessionStorage.getItem('trapwars_pending_join') ||
+        localStorage.getItem('trapwars_pending_join');
+      if (pending) {
+        const savedParams = new URLSearchParams(pending);
+        const savedBattleId = savedParams.get('battle');
+        if (savedBattleId) {
+          setJoinBattleId(savedBattleId);
+          window.history.replaceState({}, '', `${window.location.pathname}${pending}`);
+        }
+      }
+    }
   }, []);
+
+  // When wallet connects and there's a pending join in storage (handles post-redirect case
+  // where joinBattleId may not yet be set when connected flips to true)
+  useEffect(() => {
+    if (connected && !joinBattleId) {
+      const pending =
+        sessionStorage.getItem('trapwars_pending_join') ||
+        localStorage.getItem('trapwars_pending_join');
+      if (pending) {
+        const savedParams = new URLSearchParams(pending);
+        const savedBattleId = savedParams.get('battle');
+        if (savedBattleId) {
+          setJoinBattleId(savedBattleId);
+          window.history.replaceState({}, '', `${window.location.pathname}${pending}`);
+        }
+      }
+    }
+  }, [connected]); // eslint-disable-line
+
+  // Auto-open wallet modal when join link detected and wallet not yet connected
+  useEffect(() => {
+    if (joinBattleId && !connected) {
+      setShowWalletModal(true);
+    }
+  }, [joinBattleId]); // eslint-disable-line
 
   // When wallet connects, show war room and toast
   useEffect(() => {
@@ -33,10 +77,10 @@ export function App() {
     return () => { document.body.style.overflow = ''; };
   }, [connected]);
 
-  // If Player 2 clicks a join link and isn't connected yet, open wallet modal
   const handleJoinClose = () => {
     setJoinBattleId(null);
-    // Clean URL
+    sessionStorage.removeItem('trapwars_pending_join');
+    localStorage.removeItem('trapwars_pending_join');
     window.history.replaceState({}, '', window.location.pathname);
   };
 
@@ -54,7 +98,7 @@ export function App() {
         <JoinPanel battleId={joinBattleId} onClose={handleJoinClose} />
       )}
       {joinBattleId && !connected && (
-        // Prompt connection first, then join
+        // Wallet modal opens automatically; this backdrop shows while they connect
         <div className="modal-bg active">
           <div className="modal">
             <h2>JOIN BATTLE</h2>
