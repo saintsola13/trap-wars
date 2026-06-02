@@ -96,13 +96,12 @@ export function ActiveBattle() {
   // Settlement - Phase 3: 2-of-2 multisig flow
   const handleSettle = useCallback(async () => {
     if (!publicKey || !battle) return;
-    if (p1Score === null || p2Score === null) {
-      showToast('Price data not ready. Try again in a moment.');
-      return;
-    }
+    // If P&L unavailable, default both to 0 — draw means Player 1 wins
+    const finalP1Score = p1Score ?? 0;
+    const finalP2Score = p2Score ?? 0;
 
     setSettling(true);
-    const winner = p1Score >= p2Score ? battle.player1 : battle.player2;
+    const winner = finalP1Score >= finalP2Score ? battle.player1 : battle.player2;
     const loser = winner === battle.player1 ? battle.player2 : battle.player1;
     const totalPot = battle.stake * 2;
     const feeLamports = toLamports(calcFeeAmountSol(totalPot, battle.feeBps));
