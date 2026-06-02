@@ -24,7 +24,7 @@
   if (!battleId) { msg.textContent = 'No battle ID provided.'; msg.className='err'; return; }
 
   try {
-    const res = await fetch('https://api.trapwars.win/battle/' + battleId);
+    const res = await fetch('/api/battle/' + battleId);
     if (!res.ok) throw new Error('Battle not found');
     const data = await res.json();
 
