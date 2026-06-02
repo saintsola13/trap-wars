@@ -2,32 +2,42 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Trap Wars — Recovering Battle</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Trap Wars — Recover</title>
   <style>
-    body { background: #0a0a0a; color: #fff; font-family: monospace; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
-    .box { text-align: center; padding: 32px; }
-    h1 { color: #4ade80; font-size: 1.4rem; margin-bottom: 16px; }
-    p { color: #aaa; font-size: 0.95rem; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0a0a; color: #fff; font-family: monospace; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    .box { text-align: center; padding: 32px 24px; max-width: 360px; width: 100%; }
+    h1 { color: #4ade80; font-size: 1.6rem; margin-bottom: 8px; }
+    .sub { color: #555; font-size: 0.85rem; margin-bottom: 32px; }
+    .btn { display: block; width: 100%; padding: 18px; background: #7c3aed; color: #fff; font-family: monospace; font-size: 1.2rem; font-weight: bold; letter-spacing: 2px; border: none; border-radius: 10px; cursor: pointer; text-decoration: none; margin-top: 12px; }
+    .status { color: #4ade80; font-size: 0.9rem; margin-top: 16px; min-height: 24px; }
+    .err { color: #f87171; }
   </style>
 </head>
 <body>
 <div class="box">
   <h1>⚔️ TRAP WARS</h1>
-  <p id="msg">Restoring battle... redirecting.</p>
+  <p class="sub">Battle recovery</p>
+  <p id="status" class="status"></p>
+  <a id="go" class="btn" href="https://trapwars.win/" style="display:none">ENTER WAR ROOM →</a>
 </div>
 <script>
 var battle = {"id":"AWCuUQe68jKGZBrWrdfApEr6ZFX8v2tB9eCKQwEQqSnJ","createKey":"u4YAj7TkojKEqXPXmbryf7iUXDEkdtSDWS3veRQJXzT","vaultAddress":"2ZmVfZMdgbVzJ6WtVUp3d6j39MEChWsgFRcSNdzffKC3","player1":"8vm22JiPKLkB1oHEFR6wumPC6D8gS252K6jvUAPmwvkW","player2":"GB6CqqrhVj8cZZDpvY1Kh77bvESbypEc4aFUWWFBK16y","stake":0.1,"status":"ACTIVE","startTime":1780417157792,"endTime":1780417457792,"feeBps":300,"durationLabel":"5m","shareUrl":"https://trapwars.win/?battle=AWCuUQe68jKGZBrWrdfApEr6ZFX8v2tB9eCKQwEQqSnJ&stake=0.1&dur=5m&p1=8vm22JiPKLkB1oHEFR6wumPC6D8gS252K6jvUAPmwvkW","player1InitialUsd":0,"player2InitialUsd":0,"player1Snapshot":{"tokens":[],"solAmount":0.113283595,"initialUsd":0},"player2Snapshot":{"tokens":[],"solAmount":0.05087388,"initialUsd":0}};
 
+var status = document.getElementById('status');
+var go = document.getElementById('go');
+
 try {
-  // Clear ALL stale trapwars state first
   localStorage.removeItem('trapwars_pending_join');
   sessionStorage.removeItem('trapwars_pending_join');
-  // Set the battle fresh
   localStorage.setItem('trapwars_battle_v2', JSON.stringify(battle));
-} catch(e) {}
-
-window.location.href = 'https://trapwars.win/';
+  status.textContent = '✅ Battle restored. Tap below to enter.';
+  go.style.display = 'block';
+} catch(e) {
+  status.textContent = 'Error: ' + e.message;
+  status.className = 'status err';
+}
 </script>
 </body>
 </html>
