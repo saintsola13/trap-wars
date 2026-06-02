@@ -193,8 +193,8 @@ export function ActiveBattle() {
         status: 'SETTLED',
         winner,
         loser,
-        player1Score: p1Score,
-        player2Score: p2Score,
+        player1Score: finalP1Score,
+        player2Score: finalP2Score,
         settleSig: executeSig,
         cosignSig,
       }));
@@ -207,8 +207,8 @@ export function ActiveBattle() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           winner,
-          player1Score: p1Score,
-          player2Score: p2Score,
+          player1Score: finalP1Score,
+          player2Score: finalP2Score,
           settleSig: executeSig,
         }),
       }).catch(() => {});
