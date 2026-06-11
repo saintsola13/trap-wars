@@ -7,7 +7,6 @@ import {
   DEGEN_STAKE,
   BATTLE_DURATIONS,
   PLATFORM_WALLET,
-  TREASURY_WALLET,
   COSIGNER_API_URL,
 } from '../lib/constants';
 import {
@@ -16,7 +15,6 @@ import {
   deriveVaultPda,
   deriveMultisigPda,
   buildProposalApprove,
-  buildVaultExecute,
 } from '../lib/squads';
 import { getFeeInfo } from '../lib/nft';
 import { toFeePercent, calcFeeAmountSol, calcWinnerAmountSol, truncateAddress } from '../lib/fees';
@@ -43,35 +41,44 @@ export function BattlePanel() {
       .catch(() => {});
   }, [connection, publicKey]);
 
-  // Poll co-signer API while waiting for opponent — detects when P2 joins from another device
+  // Poll co-signer API while P1 waits for an opponent. Bulletproof version:
+  // - Server is the single source of truth (not local-only timers).
+  // - Polls whenever P1 is in a pre-battle state (OPEN or FUNDED), not just FUNDED.
+  // - Survives transient errors (never stops the interval on a failed fetch).
+  // - Uses same-origin proxy origin so Phantom in-app browser can reach it.
   useEffect(() => {
-    if (!battle || battle.status !== 'FUNDED' || battle.player1 !== publicKey?.toBase58()) return;
+    const myKey = publicKey?.toBase58();
+    if (!battle?.id || !myKey || battle.player1 !== myKey) return;
+    if (!['OPEN', 'FUNDED'].includes(battle.status)) return;
 
+    let stopped = false;
     const poll = setInterval(async () => {
+      if (stopped) return;
       try {
-        const res = await fetch(`${COSIGNER_API_URL}/battle/${battle.id}`);
-        if (!res.ok) return;
+        const res = await fetch(`${COSIGNER_API_URL}/battle/${battle.id}`, { cache: 'no-store' });
+        if (!res.ok) return; // keep polling; transient
         const data = await res.json();
-        if (data.status === 'ACTIVE' && data.player2) {
+        if ((data.status === 'ACTIVE' || data.status === 'SETTLED') && data.player2) {
           setBattle(prev => ({
             ...prev,
             player2: data.player2,
-            player1Snapshot: data.player1_snapshot,
-            player2Snapshot: data.player2_snapshot,
-            player1InitialUsd: data.player1_initial_usd,
-            player2InitialUsd: data.player2_initial_usd,
-            startTime: data.start_time,
-            endTime: data.end_time,
-            status: 'ACTIVE',
+            player1Snapshot: data.player1_snapshot || prev.player1Snapshot,
+            player2Snapshot: data.player2_snapshot || prev.player2Snapshot,
+            player1InitialUsd: data.player1_initial_usd ?? prev.player1InitialUsd,
+            player2InitialUsd: data.player2_initial_usd ?? prev.player2InitialUsd,
+            startTime: data.start_time ?? prev.startTime,
+            endTime: data.end_time ?? prev.endTime,
+            status: data.status,
           }));
           showToast('Opponent joined! Battle is live.');
+          stopped = true;
           clearInterval(poll);
         }
-      } catch {}
+      } catch { /* network blip — keep polling */ }
     }, 4000);
 
-    return () => clearInterval(poll);
-  }, [battle?.id, battle?.status, publicKey]); // eslint-disable-line
+    return () => { stopped = true; clearInterval(poll); };
+  }, [battle?.id, battle?.status, publicKey, setBattle, showToast]);
 
   // ── CREATE BATTLE ─────────────────────────────────────────────────────────
   const handleCreateBattle = useCallback(async () => {
@@ -197,63 +204,63 @@ export function BattlePanel() {
     clearBattle();
   }, [clearBattle]);
 
-  // ── CANCEL & REFUND (on-chain via Squads) ────────────────────────────────
+  // ── CANCEL & REFUND (SERVER-DRIVEN, robust) ──────────────────────────────
+  // The platform key drives the fragile orchestration + execute. The player
+  // signs at most ONE proposalApprove. No more "Refund error: Load failed".
   const handleCancelRefund = useCallback(async () => {
     if (!publicKey || !battle) return;
     if (!window.confirm('Cancel this battle? Your SOL will be refunded minus gas.')) return;
 
     setCancelling(true);
-    showToast('Requesting refund from platform...');
+    showToast('Requesting refund...');
+    const refundUrl = `${COSIGNER_API_URL}/battle/${battle.id}/refund-server`;
+    const multisigPda = deriveMultisigPda(battle.createKey);
 
     try {
-      // Server creates vault tx + proposal + platform co-signs (1-of-2)
-      const res = await fetch(`${COSIGNER_API_URL}/battle/${battle.id}/cancel`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      // Round 1: server builds refund proposal + platform-approves (1 of 2).
+      let res = await fetch(refundUrl, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ requestor: publicKey.toBase58() }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Cancel failed');
+      let data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Refund failed');
 
-      // If no vault tx was needed (empty vault), we're done
-      if (data.sig === null) {
+      if (data.executed || data.alreadyResolved || data.refunded === 0) {
         clearBattle();
-        showToast('Battle cancelled!');
+        showToast('Refunded!');
         return;
       }
 
-      const multisigPda = deriveMultisigPda(battle.createKey);
-      const txIndex = data.transactionIndex;
+      if (data.needsApproval) {
+        // Player provides the 2nd approval — single reliable signature.
+        showToast('Approve refund in your wallet...');
+        const approveTx = await buildProposalApprove({
+          connection, multisigPda,
+          transactionIndex: data.transactionIndex, member: publicKey,
+        });
+        const sig = await sendTransaction(approveTx, connection);
+        await connection.confirmTransaction(sig, 'confirmed');
 
-      // Player approves the cancel proposal (2-of-2 threshold met)
-      showToast('Approve cancel on your wallet (1/2)...');
-      const approveTx = await buildProposalApprove({
-        connection,
-        multisigPda,
-        transactionIndex: txIndex,
-        member: publicKey,
-      });
-      const approveSig = await sendTransaction(approveTx, connection);
-      await connection.confirmTransaction(approveSig, 'confirmed');
+        // Round 2: server executes once it sees 2-of-2.
+        showToast('Releasing your SOL...');
+        res = await fetch(refundUrl, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestor: publicKey.toBase58() }),
+        });
+        data = await res.json();
+        if (!res.ok || !data.executed) throw new Error(data.error || 'Execute failed');
+        clearBattle();
+        showToast('Refunded!');
+        return;
+      }
 
-      // Player executes the refund
-      showToast('Execute refund on your wallet (2/2)...');
-      const executeTx = await buildVaultExecute({
-        connection,
-        multisigPda,
-        transactionIndex: txIndex,
-        executor: publicKey,
-        winnerPubkey: publicKey.toBase58(),
-        treasuryPubkey: TREASURY_WALLET,
-      });
-      const executeSig = await sendTransaction(executeTx, connection);
-      await connection.confirmTransaction(executeSig, 'confirmed');
-
-      clearBattle();
-      showToast('Refunded!');
+      throw new Error('Unexpected refund response');
     } catch (e) {
       console.error(e);
-      showToast(e.message?.includes('rejected') ? 'Cancelled.' : `Refund error: ${e.message?.slice(0, 80)}`);
+      const msg = e.message?.includes('rejected') ? 'Cancelled.'
+        : e.message?.includes('gas') ? 'Platform low on gas — pinged the team, try again shortly.'
+        : `Refund error: ${e.message?.slice(0, 80)}`;
+      showToast(msg);
     } finally {
       setCancelling(false);
     }

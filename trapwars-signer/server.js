@@ -49,6 +49,90 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// ─── RENT / GAS CONSTANTS ──────────────────────────────────────────
+// A system (0-data) account must hold >= the rent-exempt minimum or be fully
+// drained to 0. Draining a vault to tiny dust fails on-chain. Resolve + cache.
+let RENT_EXEMPT_MIN = 890880; // safe default (~0.00089 SOL)
+connection.getMinimumBalanceForRentExemption(0)
+  .then(v => { RENT_EXEMPT_MIN = v; console.log('Rent-exempt min:', v); })
+  .catch(() => {});
+
+const PLATFORM_GAS_FLOOR = 30_000_000; // 0.03 SOL warn threshold
+const TX_FEE_BUFFER = 5_000;           // per-tx fee buffer (lamports)
+
+// ─── SHARED MULTISIG HELPERS ───────────────────────────────────
+async function sendPlatformIx(ix, label) {
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+  const tx = new Transaction().add(ix);
+  tx.recentBlockhash = blockhash;
+  tx.feePayer = platformKeypair.publicKey;
+  tx.sign(platformKeypair);
+  const sig = await connection.sendRawTransaction(tx.serialize());
+  await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
+  console.log(`  [${label}]`, sig);
+  return sig;
+}
+
+// Full-drain split: amounts sum to exactly vaultBalance (no rent dust left).
+function rentSafeSplit(vaultBalance, weights) {
+  const totalWeight = weights.reduce((a, b) => a + b, 0) || 1;
+  const amounts = weights.map(w => Math.floor((vaultBalance * w) / totalWeight));
+  const distributed = amounts.reduce((a, b) => a + b, 0);
+  amounts[0] += vaultBalance - distributed; // remainder to first recipient
+  return amounts;
+}
+
+// Build vaultTx + proposal + platform approval for transfer ixs at txIndex.
+// NOTE: SDK 2.1.4 wants the RAW TransactionMessage (NOT .compileToV0Message()).
+async function buildAndApproveVaultTx(multisigPda, vaultPda, txIndex, transfers, memo) {
+  const { blockhash } = await connection.getLatestBlockhash();
+  const innerMessage = new TransactionMessage({
+    payerKey: vaultPda,
+    recentBlockhash: blockhash,
+    instructions: transfers,
+  });
+  await sendPlatformIx(multisig.instructions.vaultTransactionCreate({
+    multisigPda, transactionIndex: txIndex, creator: platformKeypair.publicKey,
+    vaultIndex: 0, ephemeralSigners: 0, transactionMessage: innerMessage, memo,
+  }), 'vaultTxCreate');
+  await sendPlatformIx(multisig.instructions.proposalCreate({
+    multisigPda, transactionIndex: txIndex, creator: platformKeypair.publicKey, isDraft: false,
+  }), 'proposalCreate');
+  await sendPlatformIx(multisig.instructions.proposalApprove({
+    multisigPda, transactionIndex: txIndex, member: platformKeypair.publicKey,
+    memo: 'Trap Wars platform approval',
+  }), 'platformApprove');
+}
+
+// Execute an already-2of2-approved vault tx from the platform key.
+// Adds a rent cushion to the vault so the drain never leaves invalid dust.
+async function executeVaultTx(multisigPda, vaultPda, txIndex) {
+  const cushion = RENT_EXEMPT_MIN + TX_FEE_BUFFER;
+  await sendPlatformIx(SystemProgram.transfer({
+    fromPubkey: platformKeypair.publicKey, toPubkey: vaultPda, lamports: cushion,
+  }), 'vaultRentCushion');
+  const execRes = await multisig.instructions.vaultTransactionExecute({
+    connection, multisigPda, transactionIndex: txIndex, member: platformKeypair.publicKey,
+  });
+  const execIx = execRes.instruction || execRes.instructions?.[0] || execRes;
+  return sendPlatformIx(execIx, 'vaultExecute');
+}
+
+// Read proposal approval state for a txIndex.
+async function getProposalState(multisigPda, txIndex) {
+  const [propPda] = multisig.getProposalPda({ multisigPda, transactionIndex: txIndex });
+  try {
+    const p = await multisig.accounts.Proposal.fromAccountAddress(connection, propPda);
+    return {
+      exists: true,
+      status: Object.keys(p.status?.__kind ? { [p.status.__kind]: 1 } : p.status)[0] || String(p.status),
+      approved: (p.approved || []).map(k => k.toBase58()),
+    };
+  } catch {
+    return { exists: false, status: 'None', approved: [] };
+  }
+}
+
 // ─── SQLITE BATTLE REGISTRY ───────────────────────────────────────────────────
 const DB_PATH = path.join(__dirname, 'battles.db');
 const db = new Database(DB_PATH);
@@ -86,6 +170,20 @@ app.get('/health', (req, res) => {
 });
 
 // ─── BATTLE RECOVERY PAGE ─────────────────────────────────────────────────────
+// POST /rpc — same-origin Solana RPC proxy (avoids Phantom in-app CORS blocks)
+app.post('/rpc', async (req, res) => {
+  try {
+    const r = await fetch(RPC_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
+    const j = await r.json();
+    res.json(j);
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+// GET /recover-sol — one-click stuck-battle refund page
+app.get('/recover-sol', (req, res) => {
+  res.sendFile(path.join(__dirname, 'recover-sol.html'));
+});
+
 // GET /recover/:id — serves a page that restores battle state to localStorage then redirects
 app.get('/recover/:id', (req, res) => {
   const battle = db.prepare('SELECT * FROM battles WHERE id = ?').get(req.params.id);
@@ -334,6 +432,159 @@ app.post('/battle/:id/cancel-confirm', (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── PLATFORM GAS STATUS ────────────────────────────────────────────────────
+// GET /platform/gas — balance + whether it's above the safe floor.
+app.get('/platform/gas', async (req, res) => {
+  try {
+    const lamports = await connection.getBalance(platformKeypair.publicKey);
+    res.json({
+      pubkey: platformKeypair.publicKey.toBase58(),
+      lamports,
+      sol: lamports / LAMPORTS_PER_SOL,
+      floor: PLATFORM_GAS_FLOOR / LAMPORTS_PER_SOL,
+      ok: lamports >= PLATFORM_GAS_FLOOR,
+    });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+// ─── SERVER-DRIVEN SETTLE ───────────────────────────────────────────────────
+// POST /battle/:id/settle-server
+// Body: { playerApprovedTxIndex?, winner?, requestor }
+// The fragile multi-tx orchestration + execute is done by the platform key so a
+// flaky client wallet can't strand funds. Threshold is 2-of-2, so the client
+// must have ALREADY approved its proposal (we verify on-chain). If not yet
+// approved, we return needsApproval with the proposal info to sign.
+app.post('/battle/:id/settle-server', async (req, res) => {
+  try {
+    const battle = db.prepare('SELECT * FROM battles WHERE id = ?').get(req.params.id);
+    if (!battle) return res.status(404).json({ error: 'Battle not found' });
+    if (battle.status === 'SETTLED') return res.json({ ok: true, alreadySettled: true });
+    if (!battle.player2) return res.status(400).json({ error: 'No opponent joined. Use /refund instead.' });
+    if (battle.end_time && Date.now() < battle.end_time - 5000) {
+      return res.status(400).json({ error: 'Battle not finished yet' });
+    }
+
+    const gas = await connection.getBalance(platformKeypair.publicKey);
+    if (gas < TX_FEE_BUFFER * 6 + RENT_EXEMPT_MIN) {
+      return res.status(503).json({ error: 'Platform gas low. Refill ' + platformKeypair.publicKey.toBase58(), gasLow: true });
+    }
+
+    const multisigPda = new PublicKey(battle.id);
+    const [vaultPda] = multisig.getVaultPda({ multisigPda, index: 0 });
+    const vaultBalance = await connection.getBalance(vaultPda);
+    if (vaultBalance < TX_FEE_BUFFER) return res.status(400).json({ error: 'Vault empty' });
+
+    // Verify winner independently.
+    let s1 = battle.player1_snapshot, s2 = battle.player2_snapshot;
+    try { if (typeof s1 === 'string') s1 = JSON.parse(s1); } catch {}
+    try { if (typeof s2 === 'string') s2 = JSON.parse(s2); } catch {}
+    const verifiedWinner = await verifyWinner(
+      battle.player1, battle.player2, s1, s2,
+      battle.player1_initial_usd, battle.player2_initial_usd,
+    ) || battle.player1; // default P1 on a draw / unverifiable
+
+    const msInfo = await multisig.accounts.Multisig.fromAccountAddress(connection, multisigPda);
+    const txIndex = BigInt(Number(msInfo.transactionIndex) + 1);
+
+    // Rent-safe winner-take-all minus fee: fee to treasury, rest to winner; full drain.
+    const feeBps = battle.fee_bps || 300;
+    const [winnerAmt, feeAmt] = rentSafeSplit(vaultBalance, [10000 - feeBps, feeBps]);
+    const winner = new PublicKey(verifiedWinner);
+    // Build payout: winner gets winnerAmt, treasury gets feeAmt (sum == vaultBalance).
+    const payout = [
+      SystemProgram.transfer({ fromPubkey: vaultPda, toPubkey: winner, lamports: winnerAmt }),
+      SystemProgram.transfer({ fromPubkey: vaultPda, toPubkey: SQUADS_TREASURY_PAYOUT(), lamports: feeAmt }),
+    ];
+
+    await buildAndApproveVaultTx(multisigPda, vaultPda, txIndex, payout, 'Trap Wars settle');
+
+    // Now 1-of-2 (platform). Need the player's approval to reach threshold 2.
+    const state = await getProposalState(multisigPda, txIndex);
+    const playerApproved = state.approved.includes(battle.player1) || state.approved.includes(battle.player2);
+    if (!playerApproved) {
+      return res.json({
+        ok: false, needsApproval: true,
+        multisigPda: battle.id, transactionIndex: Number(txIndex), winner: verifiedWinner,
+        note: 'Platform approved. Player must approve proposal, then call settle-server again to execute.',
+      });
+    }
+
+    const execSig = await executeVaultTx(multisigPda, vaultPda, txIndex);
+    db.prepare("UPDATE battles SET status='SETTLED', winner=?, settle_sig=? WHERE id=?")
+      .run(verifiedWinner, execSig, battle.id);
+    res.json({ ok: true, executed: true, winner: verifiedWinner, sig: execSig });
+  } catch (e) {
+    console.error('settle-server error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Treasury that receives platform fees (NOT the Squads program treasury).
+function SQUADS_TREASURY_PAYOUT() {
+  return new PublicKey(process.env.TREASURY_WALLET || 'GB6CqqrhVj8cZZDpvY1Kh77bvESbypEc4aFUWWFBK16y');
+}
+
+// ─── SERVER-DRIVEN REFUND (both players) ────────────────────────────────────
+// POST /battle/:id/refund-server  Body: { requestor }
+// Refunds the vault split evenly to both players (or all to P1 if solo).
+// Full server-driven: builds, platform-approves; executes once a player approval
+// exists on-chain. Used for stuck/broken battles.
+app.post('/battle/:id/refund-server', async (req, res) => {
+  try {
+    const battle = db.prepare('SELECT * FROM battles WHERE id = ?').get(req.params.id);
+    if (!battle) return res.status(404).json({ error: 'Battle not found' });
+    if (battle.status === 'SETTLED' || battle.status === 'CANCELLED') {
+      return res.json({ ok: true, alreadyResolved: true, status: battle.status });
+    }
+    const gas = await connection.getBalance(platformKeypair.publicKey);
+    if (gas < TX_FEE_BUFFER * 6 + RENT_EXEMPT_MIN) {
+      return res.status(503).json({ error: 'Platform gas low. Refill ' + platformKeypair.publicKey.toBase58(), gasLow: true });
+    }
+
+    const multisigPda = new PublicKey(battle.id);
+    const [vaultPda] = multisig.getVaultPda({ multisigPda, index: 0 });
+    const vaultBalance = await connection.getBalance(vaultPda);
+    if (vaultBalance < TX_FEE_BUFFER) {
+      db.prepare("UPDATE battles SET status='CANCELLED' WHERE id=?").run(battle.id);
+      return res.json({ ok: true, refunded: 0, note: 'Vault already empty' });
+    }
+
+    const msInfo = await multisig.accounts.Multisig.fromAccountAddress(connection, multisigPda);
+    const txIndex = BigInt(Number(msInfo.transactionIndex) + 1);
+
+    let transfers;
+    if (battle.player2) {
+      const [a, b] = rentSafeSplit(vaultBalance, [1, 1]);
+      transfers = [
+        SystemProgram.transfer({ fromPubkey: vaultPda, toPubkey: new PublicKey(battle.player1), lamports: a }),
+        SystemProgram.transfer({ fromPubkey: vaultPda, toPubkey: new PublicKey(battle.player2), lamports: b }),
+      ];
+    } else {
+      transfers = [
+        SystemProgram.transfer({ fromPubkey: vaultPda, toPubkey: new PublicKey(battle.player1), lamports: vaultBalance }),
+      ];
+    }
+
+    await buildAndApproveVaultTx(multisigPda, vaultPda, txIndex, transfers, 'Trap Wars refund');
+
+    const state = await getProposalState(multisigPda, txIndex);
+    const playerApproved = state.approved.includes(battle.player1) || (battle.player2 && state.approved.includes(battle.player2));
+    if (!playerApproved) {
+      return res.json({
+        ok: false, needsApproval: true,
+        multisigPda: battle.id, transactionIndex: Number(txIndex),
+        note: 'Platform approved. A player must approve the proposal, then call refund-server again to execute.',
+      });
+    }
+    const execSig = await executeVaultTx(multisigPda, vaultPda, txIndex);
+    db.prepare("UPDATE battles SET status='CANCELLED' WHERE id=?").run(battle.id);
+    res.json({ ok: true, executed: true, sig: execSig, refunded: vaultBalance / LAMPORTS_PER_SOL });
+  } catch (e) {
+    console.error('refund-server error:', e);
+    res.status(500).json({ error: e.message });
   }
 });
 

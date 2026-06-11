@@ -1,5 +1,13 @@
+// Co-signer API URL (defined early — RPC proxy lives here)
+export const COSIGNER_API_URL =
+  import.meta.env.VITE_COSIGNER_API_URL || 'https://api.trapwars.win';
+
+// Same-origin RPC proxy. Phantom's in-app browser blocks direct public-RPC
+// fetches (CORS) which strands battles mid-flow. Routing ALL RPC through our
+// own backend proxy fixes connect/confirm/balance failures. The Helius key
+// stays server-side only — never shipped in the frontend bundle.
 export const SOLANA_RPC_URL =
-  import.meta.env.VITE_RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=282628c0-7331-4c9a-b997-cdd22dea9e25';
+  import.meta.env.VITE_RPC_URL || `${COSIGNER_API_URL}/rpc`;
 
 // Platform fee in basis points (300 = 3%)
 export const PLATFORM_FEE_BPS = 300;
@@ -14,10 +22,6 @@ export const TREASURY_WALLET =
 // NOTE: Hardcoded intentionally — must match the VPS co-signer keypair pubkey.
 // Do NOT override via VITE_PLATFORM_WALLET env var (Cloudflare had this set to treasury by mistake).
 export const PLATFORM_WALLET = 'G2YGgGN94wF5SbFgnXjTDFYEnQ7DTDoKZHNXLsZ8WX8g';
-
-// Co-signer API URL
-export const COSIGNER_API_URL =
-  import.meta.env.VITE_COSIGNER_API_URL || 'https://api.trapwars.win';
 
 // NFT collection mints — set via env vars
 export const BANDO_KIDS_COLLECTION_MINT =

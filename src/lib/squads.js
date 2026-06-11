@@ -104,6 +104,9 @@ export async function buildSettlementProposal({
   const vaultPda = deriveVaultPda(multisigPda);
   const { blockhash } = await connection.getLatestBlockhash();
 
+  // NOTE: @sqds/multisig 2.1.4 expects the RAW TransactionMessage here.
+  // Calling .compileToV0Message() throws "Cannot read properties of undefined
+  // (reading 'toBase58')" inside the SDK's compileToWrappedMessageV0.
   const innerMessage = new TransactionMessage({
     payerKey: vaultPda,
     recentBlockhash: blockhash,
@@ -119,7 +122,7 @@ export async function buildSettlementProposal({
         lamports: feeLamports,
       }),
     ],
-  }).compileToV0Message();
+  });
 
   const ix = multisig.instructions.vaultTransactionCreate({
     multisigPda,
@@ -197,7 +200,9 @@ export async function buildVaultExecute({
   });
 
   const { blockhash } = await connection.getLatestBlockhash();
-  const tx = new Transaction().add(...ix.instructions);
+  // SDK 2.1.4 returns { instruction } (singular); older returns { instructions }.
+  const execIxs = ix.instruction ? [ix.instruction] : ix.instructions;
+  const tx = new Transaction().add(...execIxs);
   tx.recentBlockhash = blockhash;
   tx.feePayer = executor;
   return tx;

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
 import { useApp } from '../context/AppContext';
-import { TREASURY_WALLET, PLATFORM_WALLET, COSIGNER_API_URL } from '../lib/constants';
+import { COSIGNER_API_URL } from '../lib/constants';
 import {
   getTokenPrices,
   evaluatePortfolio,
@@ -10,13 +10,10 @@ import {
   collectMints,
 } from '../lib/jupiter';
 import {
-  buildSettlementProposal,
-  buildProposalCreate,
   buildProposalApprove,
-  buildVaultExecute,
   deriveMultisigPda,
 } from '../lib/squads';
-import { toLamports, calcFeeAmountSol, calcWinnerAmountSol, toFeePercent, truncateAddress } from '../lib/fees';
+import { calcFeeAmountSol, calcWinnerAmountSol, toFeePercent, truncateAddress } from '../lib/fees';
 
 const REFRESH_INTERVAL_MS = 30_000;
 
@@ -93,130 +90,77 @@ export function ActiveBattle() {
     return () => clearInterval(interval);
   }, [battle?.endTime]);
 
-  // Settlement - Phase 3: 2-of-2 multisig flow
+  // Settlement - SERVER-DRIVEN (robust). The platform key does the fragile
+  // multi-tx orchestration + execute so a flaky in-app wallet can't strand
+  // funds. The player only signs ONE proposalApprove (most reliable action).
   const handleSettle = useCallback(async () => {
     if (!publicKey || !battle) return;
-    // If P&L unavailable, default both to 0 — draw means Player 1 wins
     const finalP1Score = p1Score ?? 0;
     const finalP2Score = p2Score ?? 0;
-
     setSettling(true);
-    const winner = finalP1Score >= finalP2Score ? battle.player1 : battle.player2;
-    const loser = winner === battle.player1 ? battle.player2 : battle.player1;
-    const totalPot = battle.stake * 2;
-    const feeLamports = toLamports(calcFeeAmountSol(totalPot, battle.feeBps));
-    const winnerLamports = toLamports(totalPot) - feeLamports;
+
     const multisigPda = deriveMultisigPda(battle.createKey);
-    const TX_INDEX = 1;
+    const settleUrl = `${COSIGNER_API_URL}/battle/${battle.id}/settle-server`;
 
     try {
-      // Step 1: Create vault transaction (payout proposal)
-      showToast('Step 1/4: Proposing settlement...');
-      const proposalTx = await buildSettlementProposal({
-        connection,
-        multisigPda,
-        transactionIndex: TX_INDEX,
-        proposer: publicKey,
-        winnerPubkey: winner,
-        treasuryPubkey: TREASURY_WALLET,
-        winnerLamports,
-        feeLamports,
+      // Round 1: server builds payout proposal + platform-approves (1 of 2).
+      showToast('Settling — proposing payout...');
+      let res = await fetch(settleUrl, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestor: publicKey.toBase58() }),
       });
-      const proposalSig = await sendTransaction(proposalTx, connection);
-      await connection.confirmTransaction(proposalSig, 'confirmed');
+      let data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Settle failed');
 
-      // Step 2: Create proposal (make it voteable)
-      showToast('Step 2/4: Creating proposal...');
-      const createProposalTx = await buildProposalCreate({
-        connection,
-        multisigPda,
-        transactionIndex: TX_INDEX,
-        creator: publicKey,
-      });
-      const createProposalSig = await sendTransaction(createProposalTx, connection);
-      await connection.confirmTransaction(createProposalSig, 'confirmed');
-
-      // Step 3: Player approves
-      showToast('Step 3/4: Your approval...');
-      const playerApproveTx = await buildProposalApprove({
-        connection,
-        multisigPda,
-        transactionIndex: TX_INDEX,
-        member: publicKey,
-      });
-      const playerApproveSig = await sendTransaction(playerApproveTx, connection);
-      await connection.confirmTransaction(playerApproveSig, 'confirmed');
-
-      // Step 4: Platform co-signs via backend
-      showToast('Step 4/4: Platform co-signing...');
-      const cosignRes = await fetch(`${COSIGNER_API_URL}/cosign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          multisigPda: multisigPda.toBase58(),
-          transactionIndex: TX_INDEX,
-          winner,
-          loser,
-          player1: battle.player1,
-          player2: battle.player2,
-          player1Snapshot: battle.player1Snapshot,
-          player2Snapshot: battle.player2Snapshot,
-          player1InitialUsd: battle.player1InitialUsd ?? null,
-          player2InitialUsd: battle.player2InitialUsd ?? null,
-          battleEndTime: battle.endTime,
-          winnerLamports,
-          feeLamports,
-        }),
-      });
-      if (!cosignRes.ok) {
-        const err = await cosignRes.json();
-        throw new Error(`Platform co-sign failed: ${err.error}`);
+      if (data.executed) {
+        // Already done (e.g. retried after both approvals existed).
+        finishSettled(data.winner, data.sig, finalP1Score, finalP2Score);
+        return;
       }
-      const { sig: cosignSig } = await cosignRes.json();
 
-      // Execute vault transaction (threshold met, funds released)
-      showToast('Executing payout...');
-      const executeTx = await buildVaultExecute({
-        connection,
-        multisigPda,
-        transactionIndex: TX_INDEX,
-        executor: publicKey,
-        winnerPubkey: winner,
-        treasuryPubkey: TREASURY_WALLET,
-      });
-      const executeSig = await sendTransaction(executeTx, connection);
-      await connection.confirmTransaction(executeSig, 'confirmed');
+      if (data.needsApproval) {
+        // Player provides the 2nd approval — single reliable Phantom signature.
+        showToast('Approve the payout in your wallet...');
+        const approveTx = await buildProposalApprove({
+          connection, multisigPda,
+          transactionIndex: data.transactionIndex, member: publicKey,
+        });
+        const sig = await sendTransaction(approveTx, connection);
+        await connection.confirmTransaction(sig, 'confirmed');
 
-      setBattle(prev => ({
-        ...prev,
-        status: 'SETTLED',
-        winner,
-        loser,
-        player1Score: finalP1Score,
-        player2Score: finalP2Score,
-        settleSig: executeSig,
-        cosignSig,
-      }));
-      setSettled(true);
-      showToast('Battle settled. Funds released!');
+        // Round 2: server now sees 2-of-2 and executes the payout.
+        showToast('Releasing funds...');
+        res = await fetch(settleUrl, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestor: publicKey.toBase58() }),
+        });
+        data = await res.json();
+        if (!res.ok || !data.executed) throw new Error(data.error || 'Execute failed');
+        finishSettled(data.winner, data.sig, finalP1Score, finalP2Score);
+        return;
+      }
 
-      // Notify server of settlement result
-      fetch(`${COSIGNER_API_URL}/battle/${battle.id}/settle`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          winner,
-          player1Score: finalP1Score,
-          player2Score: finalP2Score,
-          settleSig: executeSig,
-        }),
-      }).catch(() => {});
-
+      throw new Error('Unexpected settle response');
     } catch (e) {
       console.error(e);
-      showToast(e.message?.includes('rejected') ? 'Rejected.' : 'Settlement failed: ' + e.message);
+      const msg = e.message?.includes('rejected') ? 'Rejected.'
+        : e.message?.includes('gas') ? 'Platform low on gas — pinged the team, try again shortly.'
+        : 'Settlement failed: ' + e.message;
+      showToast(msg);
     } finally {
       setSettling(false);
+    }
+
+    function finishSettled(winner, sig, s1, s2) {
+      setBattle(prev => ({ ...prev, status: 'SETTLED', winner,
+        loser: winner === battle.player1 ? battle.player2 : battle.player1,
+        player1Score: s1, player2Score: s2, settleSig: sig }));
+      setSettled(true);
+      showToast('Battle settled. Funds released!');
+      fetch(`${COSIGNER_API_URL}/battle/${battle.id}/settle`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ winner, player1Score: s1, player2Score: s2, settleSig: sig }),
+      }).catch(() => {});
     }
   }, [publicKey, connection, sendTransaction, battle, p1Score, p2Score, setBattle, showToast]);
 
