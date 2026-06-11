@@ -4,10 +4,12 @@ export const COSIGNER_API_URL =
 
 // Same-origin RPC proxy. Phantom's in-app browser blocks direct public-RPC
 // fetches (CORS) which strands battles mid-flow. Routing ALL RPC through our
-// own backend proxy fixes connect/confirm/balance failures. The Helius key
-// stays server-side only — never shipped in the frontend bundle.
-export const SOLANA_RPC_URL =
-  import.meta.env.VITE_RPC_URL || `${COSIGNER_API_URL}/rpc`;
+// own backend proxy fixes connect/confirm/balance failures, and keeps the
+// Helius key server-side only (never shipped in the bundle).
+// NOTE: intentionally NOT honoring VITE_RPC_URL — Cloudflare Pages had it set
+// to the raw Helius URL, which both leaked the key AND reintroduced the CORS
+// failures. Always use the proxy.
+export const SOLANA_RPC_URL = `${COSIGNER_API_URL}/rpc`;
 
 // Platform fee in basis points (300 = 3%)
 export const PLATFORM_FEE_BPS = 300;
