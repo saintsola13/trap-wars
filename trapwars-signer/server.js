@@ -475,7 +475,10 @@ app.post('/battle/:id/settle-server', async (req, res) => {
     const multisigPda = new PublicKey(battle.id);
     const [vaultPda] = multisig.getVaultPda({ multisigPda, index: 0 });
     const vaultBalance = await connection.getBalance(vaultPda);
-    if (vaultBalance < TX_FEE_BUFFER) return res.status(400).json({ error: 'Vault empty' });
+    // Treat a vault holding only rent dust as empty (nothing real to pay out).
+    if (vaultBalance < RENT_EXEMPT_MIN + TX_FEE_BUFFER) {
+      return res.status(400).json({ error: 'Vault empty (no stake to settle)' });
+    }
 
     // Verify winner independently.
     let s1 = battle.player1_snapshot, s2 = battle.player2_snapshot;
@@ -547,7 +550,8 @@ app.post('/battle/:id/refund-server', async (req, res) => {
     const multisigPda = new PublicKey(battle.id);
     const [vaultPda] = multisig.getVaultPda({ multisigPda, index: 0 });
     const vaultBalance = await connection.getBalance(vaultPda);
-    if (vaultBalance < TX_FEE_BUFFER) {
+    // Treat a vault holding only rent dust as already empty — don't burn gas.
+    if (vaultBalance < RENT_EXEMPT_MIN + TX_FEE_BUFFER) {
       db.prepare("UPDATE battles SET status='CANCELLED' WHERE id=?").run(battle.id);
       return res.json({ ok: true, refunded: 0, note: 'Vault already empty' });
     }
