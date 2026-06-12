@@ -1,7 +1,10 @@
 import { PublicKey } from '@solana/web3.js';
 import { WSOL_MINT } from './constants';
 
-const PRICE_API = 'https://api.jup.ag/price/v2';
+// Jupiter Price API v3. v2 was deprecated -> returned empty body -> portfolios
+// showed "—" and winner couldn't be scored. v3 returns { MINT: { usdPrice } }
+// directly (no .data wrapper, field is usdPrice not price).
+const PRICE_API = 'https://lite-api.jup.ag/price/v3';
 const TOKEN_PROGRAM = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 
 export async function getTokenPrices(mints) {
@@ -10,7 +13,7 @@ export async function getTokenPrices(mints) {
     const ids = [...new Set([...mints, WSOL_MINT])].join(',');
     const res = await fetch(`${PRICE_API}?ids=${ids}`);
     const json = await res.json();
-    return json.data || {};
+    return json || {};
   } catch {
     return {};
   }
@@ -46,12 +49,12 @@ export async function snapshotPortfolio(connection, walletPublicKey) {
 // Returns total portfolio value in USD terms (using Jupiter prices)
 export async function evaluatePortfolio(snapshot, priceData) {
   const { tokens, solAmount } = snapshot;
-  const solPriceUsd = priceData[WSOL_MINT]?.price || 0;
+  const solPriceUsd = priceData[WSOL_MINT]?.usdPrice || priceData[WSOL_MINT]?.price || 0;
 
   let totalUsd = solAmount * solPriceUsd;
 
   for (const token of tokens) {
-    const priceUsd = priceData[token.mint]?.price || 0;
+    const priceUsd = priceData[token.mint]?.usdPrice || priceData[token.mint]?.price || 0;
     totalUsd += token.amount * priceUsd;
   }
 

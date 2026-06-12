@@ -685,12 +685,13 @@ async function verifyWinner(player1, player2, snapshot1, snapshot2, p1InitialUsd
     const mints = collectMints(snapshot1, snapshot2);
     if (!mints.length) return null;
 
-    const priceRes = await fetch(`https://api.jup.ag/price/v2?ids=${mints.join(',')}`);
-    const priceJson = await priceRes.json();
-    const prices = priceJson.data || {};
+    // Jupiter Price API v3. (v2 was deprecated -> returned empty body -> "Unexpected
+    // end of JSON input".) v3 returns { MINT: { usdPrice, ... } } directly, no .data wrapper.
+    const priceRes = await fetch(`https://lite-api.jup.ag/price/v3?ids=${mints.join(',')}`);
+    const prices = await priceRes.json();
 
     const WSOL = 'So11111111111111111111111111111111111111112';
-    const solPrice = prices[WSOL]?.price || 0;
+    const solPrice = prices[WSOL]?.usdPrice || prices[WSOL]?.price || 0;
 
     const val1End = evalPortfolio(snapshot1, prices, solPrice);
     const val2End = evalPortfolio(snapshot2, prices, solPrice);
@@ -726,7 +727,8 @@ function evalPortfolio(snapshot, prices, solPrice) {
   const WSOL = 'So11111111111111111111111111111111111111112';
   let total = (snapshot.solAmount || 0) * solPrice;
   for (const t of snapshot.tokens || []) {
-    total += (t.amount || 0) * (prices[t.mint]?.price || 0);
+    // Jupiter v3 uses usdPrice; keep .price fallback for safety.
+    total += (t.amount || 0) * (prices[t.mint]?.usdPrice || prices[t.mint]?.price || 0);
   }
   return total;
 }
