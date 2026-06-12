@@ -6,6 +6,7 @@ import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
 import { SOLANA_RPC_URL } from './lib/constants';
 import { AppProvider } from './context/AppContext';
 import { App } from './App';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './styles.css';
 
 // Backpack may expose itself via the standard wallet-adapter detection
@@ -20,13 +21,15 @@ function Root() {
   );
 
   return (
-    <ConnectionProvider endpoint={SOLANA_RPC_URL}>
-      <WalletProvider wallets={wallets} autoConnect>
-        <AppProvider>
-          <App />
-        </AppProvider>
-      </WalletProvider>
-    </ConnectionProvider>
+    <ErrorBoundary>
+      <ConnectionProvider endpoint={SOLANA_RPC_URL}>
+        <WalletProvider wallets={wallets} autoConnect>
+          <AppProvider>
+            <App />
+          </AppProvider>
+        </WalletProvider>
+      </ConnectionProvider>
+    </ErrorBoundary>
   );
 }
 

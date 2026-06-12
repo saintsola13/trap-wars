@@ -48,8 +48,10 @@ export async function snapshotPortfolio(connection, walletPublicKey) {
 
 // Returns total portfolio value in USD terms (using Jupiter prices)
 export async function evaluatePortfolio(snapshot, priceData) {
-  const { tokens, solAmount } = snapshot;
-  const solPriceUsd = priceData[WSOL_MINT]?.usdPrice || priceData[WSOL_MINT]?.price || 0;
+  if (!snapshot) return 0;
+  const tokens = Array.isArray(snapshot.tokens) ? snapshot.tokens : [];
+  const solAmount = snapshot.solAmount || 0;
+  const solPriceUsd = priceData?.[WSOL_MINT]?.usdPrice || priceData?.[WSOL_MINT]?.price || 0;
 
   let totalUsd = solAmount * solPriceUsd;
 
@@ -71,7 +73,9 @@ export function calcPercentChange(initialUsd, currentUsd) {
 export function collectMints(snap1, snap2) {
   const mints = new Set([WSOL_MINT]);
   [snap1, snap2].forEach(snap => {
-    if (snap) snap.tokens.forEach(t => mints.add(t.mint));
+    if (snap && Array.isArray(snap.tokens)) {
+      snap.tokens.forEach(t => t?.mint && mints.add(t.mint));
+    }
   });
   return [...mints];
 }
