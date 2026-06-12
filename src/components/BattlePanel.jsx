@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
+import { confirmSignature } from '../lib/confirm';
 import { useApp } from '../context/AppContext';
 import {
   STAKE_OPTIONS,
@@ -94,7 +95,7 @@ export function BattlePanel() {
       });
 
       const sig = await sendTransaction(tx, connection);
-      await connection.confirmTransaction(sig, 'confirmed');
+      await confirmSignature(connection, sig);
 
       // CRITICAL: verify multisig was actually created on-chain.
       // If it failed, do NOT deposit — funds would be permanently locked.
@@ -177,7 +178,7 @@ export function BattlePanel() {
       });
 
       const sig = await sendTransaction(tx, connection);
-      await connection.confirmTransaction(sig, 'confirmed');
+      await confirmSignature(connection, sig);
 
       // Snapshot portfolio at deposit time (holdings baseline for player 1)
       const snapshot = await snapshotPortfolio(connection, publicKey);
@@ -239,7 +240,7 @@ export function BattlePanel() {
           transactionIndex: data.transactionIndex, member: publicKey,
         });
         const sig = await sendTransaction(approveTx, connection);
-        await connection.confirmTransaction(sig, 'confirmed');
+        await confirmSignature(connection, sig);
 
         // Round 2: server executes once it sees 2-of-2.
         showToast('Releasing your SOL...');

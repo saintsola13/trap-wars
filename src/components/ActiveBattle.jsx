@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
+import { confirmSignature } from '../lib/confirm';
 import { useApp } from '../context/AppContext';
 import { COSIGNER_API_URL } from '../lib/constants';
 import {
@@ -126,7 +127,7 @@ export function ActiveBattle() {
           transactionIndex: data.transactionIndex, member: publicKey,
         });
         const sig = await sendTransaction(approveTx, connection);
-        await connection.confirmTransaction(sig, 'confirmed');
+        await confirmSignature(connection, sig);
 
         // Round 2: server now sees 2-of-2 and executes the payout.
         showToast('Releasing funds...');

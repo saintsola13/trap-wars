@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey } from '@solana/web3.js';
+import { confirmSignature } from '../lib/confirm';
 import { useApp } from '../context/AppContext';
 import { PLATFORM_WALLET, BATTLE_DURATIONS, COSIGNER_API_URL } from '../lib/constants';
 import { buildDepositTransaction, getVaultBalance, deriveVaultPda } from '../lib/squads';
@@ -92,7 +93,7 @@ export function JoinPanel({ battleId, onClose }) {
       });
 
       const sig = await sendTransaction(tx, connection);
-      await connection.confirmTransaction(sig, 'confirmed');
+      await confirmSignature(connection, sig);
 
       // Take both snapshots at the same moment for fair baseline
       const [p2Snapshot, p1Snapshot] = await Promise.all([
