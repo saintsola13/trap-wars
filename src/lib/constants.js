@@ -4,8 +4,14 @@
 // webview even with correct CORS. We route everything through the same-origin
 // Pages proxy: trapwars.win/api/* -> api.trapwars.win/* (see public/_redirects, 200 rewrite).
 // Override only with a same-origin path if ever needed.
+// NOTE: intentionally NOT honoring VITE_COSIGNER_API_URL anymore. Cloudflare
+// Pages has it set to the cross-origin https://api.trapwars.win, which WebKit
+// wallet webviews block ("TypeError: Load failed" / blockhash errors). We force
+// the same-origin /api proxy here so a stale Pages env var can't reintroduce the
+// cross-origin bug. (Same pattern already used to ignore VITE_RPC_URL.)
+const _envCosigner = import.meta.env.VITE_COSIGNER_API_URL;
 export const COSIGNER_API_URL =
-  import.meta.env.VITE_COSIGNER_API_URL || '/api';
+  _envCosigner && _envCosigner.startsWith('/') ? _envCosigner : '/api';
 
 // Same-origin RPC proxy -> /api/rpc -> api.trapwars.win/rpc. Keeps the Helius
 // key server-side and avoids cross-origin webview fetch failures entirely.
