@@ -91,6 +91,35 @@ export function ActiveBattle() {
     return () => clearInterval(interval);
   }, [battle?.endTime]);
 
+  // Poll the server for settlement. Covers the case where the OTHER player (or a
+  // retried call) executed the payout — this device's local "settling" spinner
+  // would otherwise hang forever even though the battle is SETTLED on-chain.
+  useEffect(() => {
+    if (!battle?.id || battle.status === 'SETTLED' || settled) return;
+    let stopped = false;
+    const check = async () => {
+      try {
+        const r = await fetch(`${COSIGNER_API_URL}/battle/${battle.id}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        if (!stopped && d && d.status === 'SETTLED') {
+          setSettling(false);
+          setSettled(true);
+          setBattle((prev) => ({
+            ...prev,
+            status: 'SETTLED',
+            winner: d.winner,
+            settleSig: d.settle_sig,
+          }));
+          showToast('Battle settled. Funds released!');
+        }
+      } catch (_) { /* keep polling */ }
+    };
+    check();
+    const interval = setInterval(check, 4000);
+    return () => { stopped = true; clearInterval(interval); };
+  }, [battle?.id, battle?.status, settled, setBattle, showToast]);
+
   // Settlement - SERVER-DRIVEN (robust). The platform key does the fragile
   // multi-tx orchestration + execute so a flaky in-app wallet can't strand
   // funds. The player only signs ONE proposalApprove (most reliable action).
