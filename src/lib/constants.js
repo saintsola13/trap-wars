@@ -1,15 +1,23 @@
-// Co-signer API URL (defined early — RPC proxy lives here)
+// Co-signer API URL. MUST be SAME-ORIGIN to survive Phantom/Solflare in-app
+// browsers (WebKit). Cross-origin fetches to api.trapwars.win throw
+// "TypeError: Load failed" / "failed to get recent blockhash" inside the wallet
+// webview even with correct CORS. We route everything through the same-origin
+// Pages proxy: trapwars.win/api/* -> api.trapwars.win/* (see public/_redirects, 200 rewrite).
+// Override only with a same-origin path if ever needed.
 export const COSIGNER_API_URL =
-  import.meta.env.VITE_COSIGNER_API_URL || 'https://api.trapwars.win';
+  import.meta.env.VITE_COSIGNER_API_URL || '/api';
 
-// Same-origin RPC proxy. Phantom's in-app browser blocks direct public-RPC
-// fetches (CORS) which strands battles mid-flow. Routing ALL RPC through our
-// own backend proxy fixes connect/confirm/balance failures, and keeps the
-// Helius key server-side only (never shipped in the bundle).
-// NOTE: intentionally NOT honoring VITE_RPC_URL — Cloudflare Pages had it set
-// to the raw Helius URL, which both leaked the key AND reintroduced the CORS
-// failures. Always use the proxy.
-export const SOLANA_RPC_URL = `${COSIGNER_API_URL}/rpc`;
+// Same-origin RPC proxy -> /api/rpc -> api.trapwars.win/rpc. Keeps the Helius
+// key server-side and avoids cross-origin webview fetch failures entirely.
+// web3.js Connection requires an ABSOLUTE url, so resolve against the current
+// origin when COSIGNER_API_URL is a relative path.
+const _absBase =
+  COSIGNER_API_URL.startsWith('http')
+    ? COSIGNER_API_URL
+    : (typeof window !== 'undefined'
+        ? `${window.location.origin}${COSIGNER_API_URL}`
+        : `https://trapwars.win${COSIGNER_API_URL}`);
+export const SOLANA_RPC_URL = `${_absBase}/rpc`;
 
 // Platform fee in basis points (300 = 3%)
 export const PLATFORM_FEE_BPS = 300;
