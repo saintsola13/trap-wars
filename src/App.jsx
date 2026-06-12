@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useApp } from './context/AppContext';
+import { autoConnectInjected } from './lib/autoconnect';
 import { COSIGNER_API_URL } from './lib/constants';
 import { Landing } from './components/Landing';
 import { WarRoom } from './components/WarRoom';
@@ -92,11 +93,20 @@ export function App() {
     }
   }, [connected]); // eslint-disable-line
 
-  // Auto-open wallet modal when join link detected and wallet not yet connected
+  const { wallets, select } = useWallet();
+
+  // Auto-open wallet modal when join link detected and wallet not yet connected.
+  // BUT: if we're already inside a wallet's in-app browser (Solflare/Phantom),
+  // connect directly to the injected provider instead of forcing a manual tap
+  // that dead-ends on a blank connect screen.
   useEffect(() => {
-    if (joinBattleId && !connected) {
-      setShowWalletModal(true);
-    }
+    if (!joinBattleId || connected) return;
+    let cancelled = false;
+    (async () => {
+      const did = await autoConnectInjected({ wallets, select, showToast });
+      if (!did && !cancelled) setShowWalletModal(true);
+    })();
+    return () => { cancelled = true; };
   }, [joinBattleId]); // eslint-disable-line
 
   // When wallet connects, show war room and toast

@@ -28,13 +28,33 @@ export function WalletModal() {
       const adapter = target?.adapter;
       if (!adapter) return;
 
-      // Wait briefly for select() to register the adapter, then connect.
+      // CRITICAL for in-app browsers: the Solflare/Phantom adapter polls for its
+      // injected provider (window.solflare / window.phantom) and only flips
+      // readyState from "Loadable" to "Installed" once detected. If we call
+      // connect() while it's still "Loadable", the adapter thinks it must REDIRECT
+      // to open the wallet browser (universal link) — but we're ALREADY inside it,
+      // so it dead-ends on a blank "connect" screen. Wait for "Installed" first.
+      const waitForInstalled = async () => {
+        const deadline = Date.now() + 8000;
+        while (Date.now() < deadline) {
+          // window-injected provider present? then the in-browser path is safe.
+          const injected =
+            (typeof window !== 'undefined') &&
+            (window.solflare?.isSolflare || window.SolflareApp ||
+             window.phantom?.solana?.isPhantom ||
+             adapter.readyState === 'Installed');
+          if (injected) return true;
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        return false;
+      };
+
       const tryConnect = async () => {
+        await waitForInstalled();
         if (adapter.connected) return;
         try {
           await adapter.connect();
         } catch (err) {
-          // 4001 = user rejected; anything else is a real failure we surface.
           if (String(err?.message || '').toLowerCase().includes('reject')) {
             showToast('Connection cancelled.');
           } else {
@@ -43,10 +63,8 @@ export function WalletModal() {
         }
       };
 
-      // Give the adapter a moment to be ready, then connect with a timeout guard.
-      await new Promise((r) => setTimeout(r, 150));
       const timeout = new Promise((_, rej) =>
-        setTimeout(() => rej(new Error('connect-timeout')), 12000)
+        setTimeout(() => rej(new Error('connect-timeout')), 15000)
       );
       await Promise.race([tryConnect(), timeout]);
     } catch (e) {
