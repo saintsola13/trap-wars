@@ -49,9 +49,14 @@ export async function checkNFTHolder(connection, walletPubkey, collectionMint) {
 
     const collectionKey = new PublicKey(collectionMint);
 
-    for (const mint of nftMints) {
-      const metaPda = deriveMetadataPda(mint);
-      const metaAccount = await connection.getAccountInfo(metaPda);
+    // Cap how many NFTs we scan. Wallets with large collections (e.g. the
+    // treasury) would otherwise fire dozens of sequential getAccountInfo calls
+    // and stall the wallet in-app browser at "connect". 40 is plenty to detect a holder.
+    const scanMints = nftMints.slice(0, 40);
+    const metaPdas = scanMints.map(deriveMetadataPda);
+    // Batch metadata fetch in one getMultipleAccountsInfo call instead of N calls.
+    const metas = await connection.getMultipleAccountsInfo(metaPdas);
+    for (const metaAccount of metas) {
       if (!metaAccount || metaAccount.data.length < 300) continue;
       if (hasVerifiedCollection(metaAccount.data, collectionKey)) return true;
     }
@@ -68,17 +73,27 @@ export async function getFeeInfo(connection, walletPubkey) {
     return { feeBps: PLATFORM_FEE_BPS, isHolder: false, collectionName: null };
   }
 
-  try {
-    const [isBando, isTrapStars] = await Promise.all([
-      checkNFTHolder(connection, walletPubkey, BANDO_KIDS_COLLECTION_MINT),
-      checkNFTHolder(connection, walletPubkey, TRAP_STARS_COLLECTION_MINT),
-    ]);
+  // Never let a slow NFT scan freeze the UI. If it doesn't resolve quickly,
+  // fall back to the standard fee — the holder discount is a nice-to-have, not
+  // a blocker for joining/creating a battle.
+  const timeout = new Promise((resolve) =>
+    setTimeout(() => resolve({ feeBps: PLATFORM_FEE_BPS, isHolder: false, collectionName: null, timedOut: true }), 6000)
+  );
 
-    if (isBando) return { feeBps: HOLDER_FEE_BPS, isHolder: true, collectionName: 'Bando Kids' };
-    if (isTrapStars) return { feeBps: HOLDER_FEE_BPS, isHolder: true, collectionName: 'Trap Stars' };
-  } catch {
-    // Fall through to default
-  }
+  const check = (async () => {
+    try {
+      const [isBando, isTrapStars] = await Promise.all([
+        checkNFTHolder(connection, walletPubkey, BANDO_KIDS_COLLECTION_MINT),
+        checkNFTHolder(connection, walletPubkey, TRAP_STARS_COLLECTION_MINT),
+      ]);
 
-  return { feeBps: PLATFORM_FEE_BPS, isHolder: false, collectionName: null };
+      if (isBando) return { feeBps: HOLDER_FEE_BPS, isHolder: true, collectionName: 'Bando Kids' };
+      if (isTrapStars) return { feeBps: HOLDER_FEE_BPS, isHolder: true, collectionName: 'Trap Stars' };
+    } catch {
+      // Fall through to default
+    }
+    return { feeBps: PLATFORM_FEE_BPS, isHolder: false, collectionName: null };
+  })();
+
+  return Promise.race([check, timeout]);
 }
