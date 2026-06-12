@@ -133,6 +133,33 @@ async function getProposalState(multisigPda, txIndex) {
   }
 }
 
+// If the multisig's CURRENT (latest) proposal is already Approved (2-of-2) but
+// not yet Executed, execute it instead of building a brand-new proposal.
+// Prevents the re-approval loop where every settle/refund call bumped
+// transactionIndex+1 and asked the player to approve again forever.
+// Returns the execute signature if it executed, otherwise null.
+async function tryExecuteCurrentProposal(multisigPda, vaultPda) {
+  try {
+    const msInfo = await multisig.accounts.Multisig.fromAccountAddress(connection, multisigPda);
+    const curIdx = Number(msInfo.transactionIndex);
+    if (curIdx < 1) return null;
+    const txIndex = BigInt(curIdx);
+    const state = await getProposalState(multisigPda, txIndex);
+    if (state.exists && state.status === 'Approved') {
+      console.log(`  [reuse] current proposal tx#${curIdx} already Approved — executing instead of recreating`);
+      const execSig = await executeVaultTx(multisigPda, vaultPda, txIndex);
+      return execSig;
+    }
+    // Approved-but-Executed already? Then it's done.
+    if (state.exists && state.status === 'Executed') {
+      return 'ALREADY_EXECUTED';
+    }
+  } catch (e) {
+    console.warn('  [reuse] check failed (will build fresh proposal):', e.message);
+  }
+  return null;
+}
+
 // ─── SQLITE BATTLE REGISTRY ───────────────────────────────────────────────────
 const DB_PATH = path.join(__dirname, 'battles.db');
 const db = new Database(DB_PATH);
@@ -489,6 +516,19 @@ app.post('/battle/:id/settle-server', async (req, res) => {
       battle.player1_initial_usd, battle.player2_initial_usd,
     ) || battle.player1; // default P1 on a draw / unverifiable
 
+    // First: if there's already an Approved-but-unexecuted proposal, just execute it
+    // (avoids the re-approval loop). Only when none exists do we build a fresh one.
+    const reuseSig = await tryExecuteCurrentProposal(multisigPda, vaultPda);
+    if (reuseSig && reuseSig !== 'ALREADY_EXECUTED') {
+      db.prepare("UPDATE battles SET status='SETTLED', winner=?, settle_sig=? WHERE id=?")
+        .run(verifiedWinner, reuseSig, battle.id);
+      return res.json({ ok: true, executed: true, winner: verifiedWinner, sig: reuseSig, reused: true });
+    }
+    if (reuseSig === 'ALREADY_EXECUTED') {
+      db.prepare("UPDATE battles SET status='SETTLED', winner=? WHERE id=?").run(verifiedWinner, battle.id);
+      return res.json({ ok: true, executed: true, winner: verifiedWinner, alreadyExecuted: true });
+    }
+
     const msInfo = await multisig.accounts.Multisig.fromAccountAddress(connection, multisigPda);
     const txIndex = BigInt(Number(msInfo.transactionIndex) + 1);
 
@@ -569,6 +609,18 @@ app.post('/battle/:id/refund-server', async (req, res) => {
     if (vaultBalance < RENT_EXEMPT_MIN + TX_FEE_BUFFER) {
       db.prepare("UPDATE battles SET status='CANCELLED' WHERE id=?").run(battle.id);
       return res.json({ ok: true, refunded: 0, note: 'Vault already empty' });
+    }
+
+    // First: if there's already an Approved-but-unexecuted proposal, execute it
+    // instead of creating a new one (prevents the re-approval loop).
+    const reuseSig = await tryExecuteCurrentProposal(multisigPda, vaultPda);
+    if (reuseSig && reuseSig !== 'ALREADY_EXECUTED') {
+      db.prepare("UPDATE battles SET status='CANCELLED' WHERE id=?").run(battle.id);
+      return res.json({ ok: true, executed: true, sig: reuseSig, reused: true, refunded: vaultBalance / LAMPORTS_PER_SOL });
+    }
+    if (reuseSig === 'ALREADY_EXECUTED') {
+      db.prepare("UPDATE battles SET status='CANCELLED' WHERE id=?").run(battle.id);
+      return res.json({ ok: true, executed: true, alreadyExecuted: true });
     }
 
     const msInfo = await multisig.accounts.Multisig.fromAccountAddress(connection, multisigPda);
