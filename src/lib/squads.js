@@ -35,10 +35,14 @@ export async function buildCreateBattleMultisig({ connection, creator, platformP
     { key: new PublicKey(platformPubkey), permissions: Permissions.all() },
   ];
 
-  // Fetch the correct treasury from Squads program config (not the config PDA itself)
-  const [programConfigPda] = multisig.getProgramConfigPda({});
-  const programConfig = await multisig.accounts.ProgramConfig.fromAccountAddress(connection, programConfigPda);
-  const SQUADS_TREASURY = programConfig.treasury;
+  // Squads v4 mainnet treasury. Verified live via
+  // ProgramConfig.fromAccountAddress(getProgramConfigPda()).treasury == this value.
+  // We hardcode it (instead of fetching ProgramConfig on every create) because the
+  // on-the-fly getAccountInfo for the ProgramConfig PDA intermittently fails inside
+  // wallet in-app browsers (Phantom/Solflare webview), throwing
+  // "Unable to find ProgramConfig account at BSTq9w3...KBvoSeXMvwb4cNZr" and blocking
+  // battle creation. The treasury is a stable constant, so no RPC call is needed.
+  const SQUADS_TREASURY = new PublicKey('5DH2e3cJmFpyi6mk65EGFediunm4ui6BiKNUNrhWtD1b');
 
   const { blockhash } = await connection.getLatestBlockhash();
 
