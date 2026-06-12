@@ -492,14 +492,24 @@ app.post('/battle/:id/settle-server', async (req, res) => {
     const msInfo = await multisig.accounts.Multisig.fromAccountAddress(connection, multisigPda);
     const txIndex = BigInt(Number(msInfo.transactionIndex) + 1);
 
-    // Rent-safe winner-take-all minus fee: fee to treasury, rest to winner; full drain.
+    // Rent-safe winner-take-all minus fee; full drain (sum == vaultBalance, no rent dust).
+    // Fee is split flat 80/20: 80% -> treasury, 20% -> platform/gas wallet.
     const feeBps = battle.fee_bps || 300;
-    const [winnerAmt, feeAmt] = rentSafeSplit(vaultBalance, [10000 - feeBps, feeBps]);
+    const winnerWeight = 10000 - feeBps;
+    const treasuryWeight = Math.round(feeBps * 0.8); // 80% of fee -> treasury
+    const gasWeight = feeBps - treasuryWeight;       // remaining 20% of fee -> gas wallet
+    const [winnerAmt, treasuryAmt, gasAmt] = rentSafeSplit(
+      vaultBalance,
+      [winnerWeight, treasuryWeight, gasWeight],
+    );
     const winner = new PublicKey(verifiedWinner);
-    // Build payout: winner gets winnerAmt, treasury gets feeAmt (sum == vaultBalance).
+    // Payout: winner + treasury(80% fee) + gas(20% fee). Sum may be 1-2 lamports
+    // short of vaultBalance due to floor() in rentSafeSplit; give the dust to winner.
+    const dust = vaultBalance - (winnerAmt + treasuryAmt + gasAmt);
     const payout = [
-      SystemProgram.transfer({ fromPubkey: vaultPda, toPubkey: winner, lamports: winnerAmt }),
-      SystemProgram.transfer({ fromPubkey: vaultPda, toPubkey: SQUADS_TREASURY_PAYOUT(), lamports: feeAmt }),
+      SystemProgram.transfer({ fromPubkey: vaultPda, toPubkey: winner, lamports: winnerAmt + dust }),
+      SystemProgram.transfer({ fromPubkey: vaultPda, toPubkey: SQUADS_TREASURY_PAYOUT(), lamports: treasuryAmt }),
+      SystemProgram.transfer({ fromPubkey: vaultPda, toPubkey: PLATFORM_GAS_PAYOUT(), lamports: gasAmt }),
     ];
 
     await buildAndApproveVaultTx(multisigPda, vaultPda, txIndex, payout, 'Trap Wars settle');
@@ -528,6 +538,11 @@ app.post('/battle/:id/settle-server', async (req, res) => {
 // Treasury that receives platform fees (NOT the Squads program treasury).
 function SQUADS_TREASURY_PAYOUT() {
   return new PublicKey(process.env.TREASURY_WALLET || 'GB6CqqrhVj8cZZDpvY1Kh77bvESbypEc4aFUWWFBK16y');
+}
+
+// Platform/gas wallet — receives the 20% slice of each fee (matches co-signer pubkey).
+function PLATFORM_GAS_PAYOUT() {
+  return new PublicKey(process.env.PLATFORM_WALLET || 'G2YGgGN94wF5SbFgnXjTDFYEnQ7DTDoKZHNXLsZ8WX8g');
 }
 
 // ─── SERVER-DRIVEN REFUND (both players) ────────────────────────────────────
