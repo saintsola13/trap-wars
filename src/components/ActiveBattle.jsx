@@ -91,34 +91,53 @@ export function ActiveBattle() {
     return () => clearInterval(interval);
   }, [battle?.endTime]);
 
-  // Poll the server for settlement. Covers the case where the OTHER player (or a
-  // retried call) executed the payout — this device's local "settling" spinner
-  // would otherwise hang forever even though the battle is SETTLED on-chain.
+  // Poll for settlement so the resolved screen ALWAYS triggers — even when the
+  // OTHER player executed the payout, or this device's settle call errored after
+  // the tx already landed. Two sources of truth: the server DB AND the on-chain
+  // vault balance (if the vault is drained after time expired, it's settled).
+  const markSettled = useCallback((winner, sig) => {
+    setSettling(false);
+    setSettled(true);
+    setBattle((prev) => ({
+      ...prev,
+      status: 'SETTLED',
+      winner: winner || prev.winner,
+      settleSig: sig || prev.settleSig,
+    }));
+    showToast('Battle settled. Funds released!');
+  }, [setBattle, showToast]);
+
   useEffect(() => {
     if (!battle?.id || battle.status === 'SETTLED' || settled) return;
     let stopped = false;
     const check = async () => {
+      // 1) Server DB says settled?
       try {
         const r = await fetch(`${COSIGNER_API_URL}/battle/${battle.id}`);
-        if (!r.ok) return;
-        const d = await r.json();
-        if (!stopped && d && d.status === 'SETTLED') {
-          setSettling(false);
-          setSettled(true);
-          setBattle((prev) => ({
-            ...prev,
-            status: 'SETTLED',
-            winner: d.winner,
-            settleSig: d.settle_sig,
-          }));
-          showToast('Battle settled. Funds released!');
+        if (r.ok) {
+          const d = await r.json();
+          if (!stopped && d && (d.status === 'SETTLED' || d.status === 'CANCELLED')) {
+            markSettled(d.winner, d.settle_sig);
+            return;
+          }
+        }
+      } catch (_) { /* fall through to on-chain check */ }
+
+      // 2) On-chain fallback: timer expired AND vault drained => it's resolved,
+      //    even if the DB write lagged.
+      try {
+        if (battle.vaultAddress && (timeLeft === 0 || settling)) {
+          const bal = await connection.getBalance(new PublicKey(battle.vaultAddress));
+          if (!stopped && bal < 1_000_000) { // < 0.001 SOL = effectively drained
+            markSettled(battle.winner, battle.settleSig);
+          }
         }
       } catch (_) { /* keep polling */ }
     };
     check();
-    const interval = setInterval(check, 4000);
+    const interval = setInterval(check, 2000);
     return () => { stopped = true; clearInterval(interval); };
-  }, [battle?.id, battle?.status, settled, setBattle, showToast]);
+  }, [battle?.id, battle?.status, battle?.vaultAddress, settled, settling, timeLeft, connection, markSettled]);
 
   // Settlement - SERVER-DRIVEN (robust). The platform key does the fragile
   // multi-tx orchestration + execute so a flaky in-app wallet can't strand
@@ -363,6 +382,28 @@ export function ActiveBattle() {
               {settling
                 ? <><span className="spinner" />SETTLING...</>
                 : 'SETTLE BATTLE'}
+            </button>
+          )}
+
+          {settling && (
+            <button
+              className="action-btn"
+              style={{ marginTop: '10px', background: 'transparent', border: '1px solid #333', color: '#888' }}
+              onClick={async () => {
+                try {
+                  const r = await fetch(`${COSIGNER_API_URL}/battle/${battle.id}`);
+                  const d = await r.json();
+                  if (d && (d.status === 'SETTLED' || d.status === 'CANCELLED')) {
+                    markSettled(d.winner, d.settle_sig);
+                  } else {
+                    showToast('Still settling — hang tight a moment.');
+                  }
+                } catch {
+                  showToast('Could not reach server. Reload if this persists.');
+                }
+              }}
+            >
+              CHECK RESULT
             </button>
           )}
 
