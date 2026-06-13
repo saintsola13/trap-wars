@@ -154,6 +154,9 @@ export function App() {
             >
               CONNECT WALLET
             </button>
+            <p style={{ color: '#555', fontSize: '0.8rem', marginTop: '14px', fontFamily: 'sans-serif', lineHeight: '1.4' }}>
+              💡 For best results, open this link inside your Phantom or Solflare app browser.
+            </p>
           </div>
         </div>
       )}

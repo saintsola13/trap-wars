@@ -34,10 +34,15 @@ export function WalletModal() {
       // connect() while it's still "Loadable", the adapter thinks it must REDIRECT
       // to open the wallet browser (universal link) — but we're ALREADY inside it,
       // so it dead-ends on a blank "connect" screen. Wait for "Installed" first.
+      //
+      // HOWEVER: if after 600ms there is still NO wallet injection detected at all,
+      // we are in a regular browser (not inside any wallet's in-app browser).
+      // In that case skip the full 8s wait and let adapter.connect() trigger the
+      // universal-link redirect to Phantom/Solflare immediately — no hang.
       const waitForInstalled = async () => {
         const deadline = Date.now() + 8000;
+        let polls = 0;
         while (Date.now() < deadline) {
-          // window-injected provider present? then the in-browser path is safe.
           const injected =
             (typeof window !== 'undefined') &&
             (window.solflare?.isSolflare || window.SolflareApp ||
@@ -45,6 +50,15 @@ export function WalletModal() {
              adapter.readyState === 'Installed');
           if (injected) return true;
           await new Promise((r) => setTimeout(r, 200));
+          polls++;
+          // After 3 polls (~600ms) with zero wallet injection → regular browser.
+          // Skip the wait; let adapter.connect() do the deep-link redirect now.
+          if (polls >= 3) {
+            const anyWalletBrowser =
+              (typeof window !== 'undefined') &&
+              !!(window.solflare?.isSolflare || window.SolflareApp || window.phantom?.solana);
+            if (!anyWalletBrowser) return false;
+          }
         }
         return false;
       };
