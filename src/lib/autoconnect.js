@@ -8,9 +8,19 @@
 export async function autoConnectInjected({ wallets, select, showToast }) {
   if (typeof window === 'undefined') return false;
 
-  // Detect which wallet's browser we're inside.
-  const inSolflare = !!(window.solflare?.isSolflare || window.SolflareApp);
-  const inPhantom = !!(window.phantom?.solana?.isPhantom);
+  // Phantom's window.phantom.solana injection can lag a few ms behind JS
+  // execution on mobile. Poll briefly before giving up and falling through to
+  // the manual wallet modal — this prevents a race where we miss the injection
+  // and leave the user staring at a dark screen / manual-connect modal.
+  const detectDeadline = Date.now() + 600;
+  let inSolflare = false;
+  let inPhantom = false;
+  while (Date.now() < detectDeadline) {
+    inSolflare = !!(window.solflare?.isSolflare || window.SolflareApp);
+    inPhantom = !!(window.phantom?.solana?.isPhantom);
+    if (inSolflare || inPhantom) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
 
   let walletName = null;
   if (inSolflare) walletName = 'Solflare';

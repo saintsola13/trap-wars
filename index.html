@@ -18,7 +18,24 @@
   <link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=VT323&display=swap" rel="stylesheet" />
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <!-- Pre-render loading state — visible while JS bundle parses/executes.
+         React will replace this content when it mounts. -->
+    <div id="pre-render" style="
+      position:fixed;inset:0;background:#000;
+      display:flex;flex-direction:column;
+      align-items:center;justify-content:center;gap:12px;
+      font-family:'VT323',monospace;color:#9333ea;
+      font-size:2rem;letter-spacing:4px;z-index:9999;
+    ">
+      <div>TRAP WARS</div>
+      <div style="font-size:1rem;color:#555;letter-spacing:2px">LOADING...</div>
+    </div>
+  </div>
+  <script>document.addEventListener('DOMContentLoaded',function(){
+    var pr=document.getElementById('pre-render');
+    if(pr){pr.style.transition='opacity 0.3s';setTimeout(function(){pr.style.opacity='0';setTimeout(function(){pr.remove();},300);},100);}
+  });</script>
   <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
