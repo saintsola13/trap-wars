@@ -167,7 +167,10 @@ export function ActiveBattle() {
 
       if (data.executed) {
         // Already done (e.g. retried after both approvals existed).
-        finishSettled(data.winner, data.sig, finalP1Score, finalP2Score);
+        // Prefer server-calculated scores (from live portfolio) over frontend estimate.
+        finishSettled(data.winner, data.sig,
+          data.player1Score ?? finalP1Score,
+          data.player2Score ?? finalP2Score);
         return;
       }
 
@@ -189,7 +192,9 @@ export function ActiveBattle() {
         });
         data = await res.json();
         if (!res.ok || !data.executed) throw new Error(data.error || 'Execute failed');
-        finishSettled(data.winner, data.sig, finalP1Score, finalP2Score);
+        finishSettled(data.winner, data.sig,
+          data.player1Score ?? finalP1Score,
+          data.player2Score ?? finalP2Score);
         return;
       }
 
