@@ -45,32 +45,59 @@ export function ActiveBattle() {
     }
   }, [battle?.player1InitialUsd, battle?.player2InitialUsd]);
 
-  // Price refresh
-  const refreshPrices = useCallback(async () => {
-    if (!battle?.player1Snapshot || !battle?.player2Snapshot) return;
+  // Fetch a wallet's CURRENT on-chain holdings (SOL + all SPL tokens).
+  // Used for live score refresh so mid-battle trades are reflected in real time.
+  const getLivePortfolio = useCallback(async (walletAddress) => {
+    const TOKEN_PROGRAM = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+    const pubkey = new PublicKey(walletAddress);
+    const [lamports, tokenAccounts] = await Promise.all([
+      connection.getBalance(pubkey),
+      connection.getParsedTokenAccountsByOwner(pubkey, { programId: TOKEN_PROGRAM }),
+    ]);
+    const solAmount = lamports / 1e9;
+    const tokens = tokenAccounts.value
+      .map(ta => ({
+        mint: ta.account.data.parsed.info.mint,
+        amount: ta.account.data.parsed.info.tokenAmount.uiAmount || 0,
+      }))
+      .filter(t => t.amount > 0);
+    return { solAmount, tokens };
+  }, [connection]);
 
-    const mints = collectMints(battle.player1Snapshot, battle.player2Snapshot);
+  // Price refresh — fetches LIVE on-chain portfolios each tick so any trades
+  // made during the battle are immediately reflected in the score display.
+  const refreshPrices = useCallback(async () => {
+    if (!battle?.player1 || !battle?.player2) return;
+
+    // Fetch current holdings for both players in parallel
+    const [live1, live2] = await Promise.all([
+      getLivePortfolio(battle.player1),
+      getLivePortfolio(battle.player2),
+    ]).catch(() => [null, null]);
+    if (!live1 || !live2) return;
+
+    const mints = collectMints(live1, live2);
     const prices = await getTokenPrices(mints).catch(() => ({}));
     if (!Object.keys(prices).length) return;
 
     const [p1Now, p2Now] = await Promise.all([
-      evaluatePortfolio(battle.player1Snapshot, prices),
-      evaluatePortfolio(battle.player2Snapshot, prices),
+      evaluatePortfolio(live1, prices),
+      evaluatePortfolio(live2, prices),
     ]);
 
-    // Fall back to current prices if no stored initial value
+    // Seed initial USD values from stored snapshot on first tick
     if (p1InitialRef.current === null) {
-      p1InitialRef.current = battle.player1InitialUsd || await evaluatePortfolio(battle.player1Snapshot, prices);
+      p1InitialRef.current = battle.player1InitialUsd || p1Now;
     }
     if (p2InitialRef.current === null) {
-      p2InitialRef.current = battle.player2InitialUsd || await evaluatePortfolio(battle.player2Snapshot, prices);
+      p2InitialRef.current = battle.player2InitialUsd || p2Now;
     }
 
     setP1ValueUsd(p1Now);
     setP2ValueUsd(p2Now);
     setP1Score(calcPercentChange(p1InitialRef.current, p1Now));
     setP2Score(calcPercentChange(p2InitialRef.current, p2Now));
-  }, [battle]);
+  }, [battle, getLivePortfolio]);
 
   useEffect(() => {
     if (battle?.status !== 'ACTIVE') return;
