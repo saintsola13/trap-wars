@@ -95,7 +95,7 @@ export function ActiveBattle() {
   // OTHER player executed the payout, or this device's settle call errored after
   // the tx already landed. Two sources of truth: the server DB AND the on-chain
   // vault balance (if the vault is drained after time expired, it's settled).
-  const markSettled = useCallback((winner, sig) => {
+  const markSettled = useCallback((winner, sig, p1Score, p2Score) => {
     setSettling(false);
     setSettled(true);
     setBattle((prev) => ({
@@ -103,6 +103,10 @@ export function ActiveBattle() {
       status: 'SETTLED',
       winner: winner || prev.winner,
       settleSig: sig || prev.settleSig,
+      // Pull scores from server response so P2's device always has them
+      // (JoinPanel never initialises player1Score/player2Score in battle state)
+      player1Score: p1Score ?? prev.player1Score ?? null,
+      player2Score: p2Score ?? prev.player2Score ?? null,
     }));
     showToast('Battle settled. Funds released!');
   }, [setBattle, showToast]);
@@ -117,7 +121,7 @@ export function ActiveBattle() {
         if (r.ok) {
           const d = await r.json();
           if (!stopped && d && (d.status === 'SETTLED' || d.status === 'CANCELLED')) {
-            markSettled(d.winner, d.settle_sig);
+            markSettled(d.winner, d.settle_sig, d.player1_score, d.player2_score);
             return;
           }
         }
@@ -272,7 +276,7 @@ export function ActiveBattle() {
               <div className="you-badge">P1</div>
               <div className="player-addr">{truncateAddress(battle.player1)}</div>
               <div className={`player-score ${(battle.player1Score ?? 0) >= 0 ? 'up' : 'down'}`}>
-                {battle.player1Score !== null ? `${battle.player1Score >= 0 ? '+' : ''}${battle.player1Score.toFixed(2)}%` : '-'}
+                {battle.player1Score != null ? `${battle.player1Score >= 0 ? '+' : ''}${battle.player1Score.toFixed(2)}%` : '-'}
               </div>
               <div className="score-label">P&L</div>
             </div>
@@ -280,7 +284,7 @@ export function ActiveBattle() {
               <div className="you-badge">P2</div>
               <div className="player-addr">{truncateAddress(battle.player2)}</div>
               <div className={`player-score ${(battle.player2Score ?? 0) >= 0 ? 'up' : 'down'}`}>
-                {battle.player2Score !== null ? `${battle.player2Score >= 0 ? '+' : ''}${battle.player2Score.toFixed(2)}%` : '-'}
+                {battle.player2Score != null ? `${battle.player2Score >= 0 ? '+' : ''}${battle.player2Score.toFixed(2)}%` : '-'}
               </div>
               <div className="score-label">P&L</div>
             </div>
@@ -339,7 +343,7 @@ export function ActiveBattle() {
               {p1IsMe && <div className="you-badge">YOU</div>}
               <div className="player-addr">{truncateAddress(battle.player1)}</div>
               <div className={`player-score${p1Score !== null ? (p1Score >= 0 ? ' up' : ' down') : ''}`}>
-                {p1Score !== null ? `${p1Score >= 0 ? '+' : ''}${p1Score.toFixed(2)}%` : '-'}
+                {p1Score != null ? `${p1Score >= 0 ? '+' : ''}${p1Score.toFixed(2)}%` : '-'}
               </div>
               <div className="score-label">PORTFOLIO P&L</div>
               {p1ValueUsd !== null && (
@@ -353,7 +357,7 @@ export function ActiveBattle() {
               {p2IsMe && <div className="you-badge">YOU</div>}
               <div className="player-addr">{truncateAddress(battle.player2)}</div>
               <div className={`player-score${p2Score !== null ? (p2Score >= 0 ? ' up' : ' down') : ''}`}>
-                {p2Score !== null ? `${p2Score >= 0 ? '+' : ''}${p2Score.toFixed(2)}%` : '-'}
+                {p2Score != null ? `${p2Score >= 0 ? '+' : ''}${p2Score.toFixed(2)}%` : '-'}
               </div>
               <div className="score-label">PORTFOLIO P&L</div>
               {p2ValueUsd !== null && (
@@ -394,7 +398,7 @@ export function ActiveBattle() {
                   const r = await fetch(`${COSIGNER_API_URL}/battle/${battle.id}`);
                   const d = await r.json();
                   if (d && (d.status === 'SETTLED' || d.status === 'CANCELLED')) {
-                    markSettled(d.winner, d.settle_sig);
+                    markSettled(d.winner, d.settle_sig, d.player1_score, d.player2_score);
                   } else {
                     showToast('Still settling — hang tight a moment.');
                   }
