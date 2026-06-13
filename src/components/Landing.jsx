@@ -1,7 +1,17 @@
+import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { COSIGNER_API_URL } from '../lib/constants';
 
 export function Landing() {
   const { setShowWalletModal, setShowDegenModal } = useApp();
+  const [leaders, setLeaders] = useState([]);
+
+  useEffect(() => {
+    fetch(`${COSIGNER_API_URL}/leaderboard`)
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setLeaders(data); })
+      .catch(() => {});
+  }, []);
 
   const scrollTo = id => {
     const el = document.getElementById(id);
@@ -56,7 +66,16 @@ export function Landing() {
               </tr>
             </thead>
             <tbody>
-              <tr><td colSpan="4" style={{textAlign:'center',color:'#444',padding:'32px',fontFamily:'VT323, monospace',fontSize:'1.2rem',letterSpacing:'2px'}}>NO BATTLES YET. BE THE FIRST.</td></tr>
+              {leaders.length === 0 ? (
+                <tr><td colSpan="4" style={{textAlign:'center',color:'#444',padding:'32px',fontFamily:'VT323, monospace',fontSize:'1.2rem',letterSpacing:'2px'}}>NO BATTLES YET. BE THE FIRST.</td></tr>
+              ) : leaders.map((row, i) => (
+                <tr key={row.wallet}>
+                  <td>{i + 1}</td>
+                  <td style={{fontFamily:'monospace',fontSize:'0.85rem'}}>{row.wallet.slice(0,4)}...{row.wallet.slice(-4)}</td>
+                  <td>{row.wins}</td>
+                  <td style={{color:'#4ade80'}}>{row.total_earned.toFixed(3)} SOL</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
