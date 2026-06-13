@@ -107,7 +107,7 @@ export function WalletModal() {
   const ordered = [...available, ...unavailable];
 
   return (
-    <div className="modal-bg active" onClick={e => e.target === e.currentTarget && setShowWalletModal(false)}>
+    <div className="modal-bg active" style={{ zIndex: 300 }} onClick={e => e.target === e.currentTarget && setShowWalletModal(false)}>
       <div className="modal">
         <button className="modal-close" onClick={() => setShowWalletModal(false)}>✕</button>
         <h2>CONNECT WALLET</h2>

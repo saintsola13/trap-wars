@@ -14,6 +14,7 @@ export function App() {
   const { connected, publicKey } = useWallet();
   const { showToast, setShowWalletModal } = useApp();
   const [joinBattleId, setJoinBattleId] = useState(null);
+  const [autoConnecting, setAutoConnecting] = useState(false);
 
   // ?recover=battleId — restore lost battle state from server (e.g. localStorage cleared)
   useEffect(() => {
@@ -102,9 +103,13 @@ export function App() {
   useEffect(() => {
     if (!joinBattleId || connected) return;
     let cancelled = false;
+    setAutoConnecting(true);
     (async () => {
       const did = await autoConnectInjected({ wallets, select, showToast });
-      if (!did && !cancelled) setShowWalletModal(true);
+      if (!cancelled) {
+        setAutoConnecting(false);
+        if (!did) setShowWalletModal(true);
+      }
     })();
     return () => { cancelled = true; };
   }, [joinBattleId]); // eslint-disable-line
@@ -147,16 +152,27 @@ export function App() {
         <div className="modal-bg active">
           <div className="modal">
             <h2>JOIN BATTLE</h2>
-            <p>Connect your wallet to join this battle.</p>
-            <button
-              className="action-btn"
-              onClick={() => setShowWalletModal(true)}
-            >
-              CONNECT WALLET
-            </button>
-            <p style={{ color: '#555', fontSize: '0.8rem', marginTop: '14px', fontFamily: 'sans-serif', lineHeight: '1.4' }}>
-              💡 For best results, open this link inside your Phantom or Solflare app browser.
-            </p>
+            {autoConnecting ? (
+              <>
+                <p style={{ color: '#aaa' }}>Connecting to wallet...</p>
+                <p style={{ color: '#555', fontSize: '0.85rem', marginTop: '8px', fontFamily: 'sans-serif' }}>
+                  Check Phantom for an approval prompt.
+                </p>
+              </>
+            ) : (
+              <>
+                <p>Connect your wallet to join this battle.</p>
+                <button
+                  className="action-btn"
+                  onClick={() => setShowWalletModal(true)}
+                >
+                  CONNECT WALLET
+                </button>
+                <p style={{ color: '#555', fontSize: '0.8rem', marginTop: '14px', fontFamily: 'sans-serif', lineHeight: '1.4' }}>
+                  💡 Open this link inside Phantom or Solflare’s app browser.
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}
