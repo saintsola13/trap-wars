@@ -243,6 +243,8 @@ tr:hover td { background: #111; }
   position: relative; z-index: 2;
   display: flex; flex-direction: column;
   width: 100%; height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .wr-nav {
   display: flex; justify-content: space-between; align-items: center;
@@ -262,10 +264,8 @@ tr:hover td { background: #111; }
   cursor: pointer;
 }
 .wr-body {
-  flex: 1; display: flex; align-items: flex-start; justify-content: center;
+  display: flex; align-items: flex-start; justify-content: center;
   padding: 20px;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
 }
 .wr-panel {
   background: rgba(10,10,10,0.88);
@@ -281,6 +281,11 @@ tr:hover td { background: #111; }
   text-shadow: 2px 2px 0 #9333ea;
 }
 .wr-panel .sub { color: #666; font-size: 1rem; margin-bottom: 20px; letter-spacing: 2px; }
+.wr-leaderboard {
+  width: 100%; max-width: 860px;
+  margin: 0 auto;
+  padding: 0 20px 60px;
+}
 .stats-row { display: flex; gap: 12px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
 .stat-tile {
   flex: 1; min-width: 110px;

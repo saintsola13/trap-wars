@@ -3,6 +3,7 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import { useApp } from '../context/AppContext';
 import { BattlePanel } from './BattlePanel';
 import { ActiveBattle } from './ActiveBattle';
+import { Leaderboard } from './Leaderboard';
 import { truncateAddress } from '../lib/fees';
 
 export function WarRoom() {
@@ -33,6 +34,9 @@ export function WarRoom() {
           <div className="wr-panel">
             {isActiveBattle ? <ActiveBattle /> : <BattlePanel />}
           </div>
+        </div>
+        <div className="wr-leaderboard">
+          <Leaderboard />
         </div>
       </div>
     </div>

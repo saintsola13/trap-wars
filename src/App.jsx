@@ -121,9 +121,9 @@ export function App() {
     }
   }, [connected, publicKey]); // eslint-disable-line
 
-  // Manage body scroll lock when war room is open
+  // Keep body scrollable so leaderboard is reachable in war room
   useEffect(() => {
-    document.body.style.overflow = connected ? 'hidden' : '';
+    document.body.style.overflow = '';
     return () => { document.body.style.overflow = ''; };
   }, [connected]);
 

@@ -29,7 +29,7 @@ const multisig = require('@sqds/multisig');
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3333;
-const RPC_URL = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=282628c0-7331-4c9a-b997-cdd22dea9e25';
+const RPC_URL = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=c3df8735-de7a-41f3-ae43-5f3975d24149';
 
 const PLATFORM_SECRET = JSON.parse(process.env.PLATFORM_SECRET_KEY || '[]');
 const platformKeypair = Keypair.fromSecretKey(Uint8Array.from(PLATFORM_SECRET));
